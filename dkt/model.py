@@ -251,3 +251,71 @@ class Bert(nn.Module):
         preds = self.activation(out).view(batch_size, -1)
 
         return preds
+        
+
+# riiid rank 7
+class Transformer(nn.Module):
+    def __init__(self, args):
+        super(Transformer, self).__init__()
+        self.args = args
+        # Embedding 
+        # interaction은 현재 correct로 구성되어있다. correct(1, 2) + padding(0)
+        self.embedding_interaction = nn.Embedding(3, args.hidden_dim//4)
+        self.embedding_test = nn.Embedding(args.n_test + 1, args.hidden_dim//4)
+        self.embedding_question = nn.Embedding(args.n_questions + 1, args.hidden_dim//4)
+        self.embedding_tag = nn.Embedding(args.n_tag + 1, args.hidden_dim//4)
+
+        # embedding combination projection
+        self.comb_proj = nn.Sequential(nn.Linear(args.hidden_dim, args.hidden_dim), 
+                                  nn.LayerNorm(args.hidden_dim))
+        
+        config = BertConfig(3, # not used
+                    hidden_size=args.hidden_dim,
+                    num_hidden_layers=args.n_layers,
+                    num_attention_heads=args.n_heads,
+                    intermediate_size=args.hidden_dim,
+                    hidden_dropout_prob=args.drop_out,
+                    attention_probs_dropout_prob=args.drop_out)
+        
+        self.encoder = BertEncoder(config)
+
+        def get_reg():
+            return nn.Sequential(nn.Linear(args.hidden_dim, args.hidden_dim),
+                                 nn.LayerNorm(args.hidden_dim),
+                                 nn.Dropout(args.drop_out),
+                                 nn.ReLU(),
+                                 nn.Linear(args.hidden_dim, 1),
+                                 nn.Sigmoid())
+
+        self.reg_layer = get_reg()
+
+    def forward(self, inputs):
+        test, question, tag, _, mask, interaction, _ = inputs
+        batch_size = interaction.size(0)
+        
+        embed_interaction = self.embedding_interaction(interaction)
+        embed_test = self.embedding_test(test)
+        embed_question = self.embedding_question(question)
+        embed_tag = self.embedding_tag(tag)
+
+        embed = torch.cat([embed_interaction,
+                       embed_test,
+                       embed_question,
+                       embed_tag,], 2)
+        
+        comb_embed = self.comb_proj(embed)
+        
+        extended_attention_mask = mask.unsqueeze(1).unsqueeze(2)
+        extended_attention_mask = extended_attention_mask.to(dtype=torch.float32)
+        extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+        
+#         mask, _ = mask.view(batch_size, args.max_seq_len, -1).max(2)
+        
+        encoded_layers = self.encoder(comb_embed, attention_mask=extended_attention_mask)
+        sequence_output = encoded_layers[0]  # 길이 1이라서 0과 -1 같음
+        # sequence_output은 [64, 20, 64]
+        # sequence_output = sequence_output[:, -1]
+        
+        pred_y = self.reg_layer(sequence_output).view(batch_size, -1)  # [64, 20, 64] -> [64, 20, 1]
+        
+        return pred_y
