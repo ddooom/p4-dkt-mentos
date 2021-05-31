@@ -10,3 +10,7 @@ def get_optimizer(model, args):
     optimizer.zero_grad()
     
     return optimizer
+
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']

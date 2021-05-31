@@ -1,19 +1,36 @@
 import os
 import torch
 import numpy as np
+from glob import glob
 
 
 from .dataloader import get_loaders
-from .optimizer import get_optimizer
+from .optimizer import get_optimizer, get_lr
 from .scheduler import get_scheduler
 from .criterion import get_criterion
 from .metric import get_metric
-from .model import LSTM
+from .model import LSTM, LSTMATTN, Bert
 
 import wandb
 
 def run(args, train_data, valid_data):
+    print(args)
+
     train_loader, valid_loader = get_loaders(args, train_data, valid_data)
+
+    
+    # model save path 설정
+    model_dir = os.path.join(args.model_dir, args.model)
+    os.makedirs(model_dir, exist_ok=True)
+    save_name = None
+    model_number = glob(os.path.join(model_dir, "*"))
+    if len(model_number) == 0:
+        save_name = "model_0.pt"
+    else:
+        model_number = [int(m.split(".")[0][-1]) for m in model_number]
+        model_number.sort()
+        save_name = "model_" + str(model_number[-1] + 1) + ".pt"
+
     
     # only when using warmup scheduler
     args.total_steps = int(len(train_loader.dataset) / args.batch_size) * (args.n_epochs)
@@ -25,29 +42,29 @@ def run(args, train_data, valid_data):
 
     best_auc = -1
     early_stopping_counter = 0
-
     for epoch in range(args.n_epochs):
+
         print(f"Start Training: Epoch {epoch + 1}")
         
         ### TRAIN
         train_auc, train_acc, train_loss = train(train_loader, model, optimizer, args)
         
         ### VALID
-        auc, acc, _ , _ = validate(valid_loader, model, args)
+        auc, acc,_ , _ = validate(valid_loader, model, args)
 
         ### TODO: model save or early stopping
         wandb.log({"epoch": epoch, "train_loss": train_loss, "train_auc": train_auc, "train_acc":train_acc,
-                  "valid_auc":auc, "valid_acc":acc})
-
+                  "valid_auc":auc, "valid_acc":acc, "learning_rate": get_lr(optimizer)})
         if auc > best_auc:
             best_auc = auc
+
             # torch.nn.DataParallel로 감싸진 경우 원래의 model을 가져옵니다.
             model_to_save = model.module if hasattr(model, 'module') else model
             save_checkpoint({
                 'epoch': epoch + 1,
                 'state_dict': model_to_save.state_dict(),
                 },
-                args.model_dir, 'model.pt',
+                model_dir, save_name,
             )
             early_stopping_counter = 0
         else:
@@ -70,10 +87,9 @@ def train(train_loader, model, optimizer, args):
     total_targets = []
     losses = []
     for step, batch in enumerate(train_loader):
-        input = process_batch(batch, args)
-        preds = model(input)
-        targets = input[3] # correct
-
+        inputs = process_batch(batch, args)
+        preds = model(inputs)
+        targets = inputs[3] # correct
 
         loss = compute_loss(preds, targets)
         update_params(loss, model, optimizer, args)
@@ -113,10 +129,10 @@ def validate(valid_loader, model, args):
     total_preds = []
     total_targets = []
     for step, batch in enumerate(valid_loader):
-        input = process_batch(batch, args)
+        inputs = process_batch(batch, args)
 
-        preds = model(input)
-        targets = input[3] # correct
+        preds = model(inputs)
+        targets = inputs[3] # correct
 
 
         # predictions
@@ -146,6 +162,7 @@ def validate(valid_loader, model, args):
 
 
 def inference(args, test_data):
+    
     model = load_model(args)
     model.eval()
     _, test_loader = get_loaders(args, None, test_data)
@@ -158,6 +175,7 @@ def inference(args, test_data):
 
         preds = model(input)
         
+
         # predictions
         preds = preds[:,-1]
         
@@ -169,7 +187,7 @@ def inference(args, test_data):
             
         total_preds+=list(preds)
 
-    write_path = os.path.join(args.output_dir, "output.csv")
+    write_path = os.path.join(args.output_dir, args.output_name)
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)    
     with open(write_path, 'w', encoding='utf8') as w:
@@ -188,14 +206,19 @@ def get_model(args):
     if args.model == 'lstm': model = LSTM(args)
     if args.model == 'lstmattn': model = LSTMATTN(args)
     if args.model == 'bert': model = Bert(args)
+    if args.model == 'transformer' : model = Transformer(args)
     
+
     model.to(args.device)
+
     return model
 
 
 # 배치 전처리
 def process_batch(batch, args):
+
     test, question, tag, correct, mask = batch
+    
     
     # change to float
     mask = mask.type(torch.FloatTensor)
@@ -269,7 +292,9 @@ def save_checkpoint(state, model_dir, model_filename):
 
 
 def load_model(args):
-    model_path = os.path.join(args.model_dir, args.model_name)
+    
+    
+    model_path = os.path.join(args.model_dir, args.model, args.model_name)
     print("Loading Model from:", model_path)
     load_state = torch.load(model_path)
     model = get_model(args)
@@ -277,5 +302,6 @@ def load_model(args):
     # 1. load model state
     model.load_state_dict(load_state['state_dict'], strict=True)
    
+    
     print("Loading Model from:", model_path, "...Finished.")
     return model

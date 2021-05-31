@@ -4,7 +4,9 @@ import argparse
 
 def parse_args(mode='train'):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--seed', default=42, type=int, help='seed')
+
+    
+    parser.add_argument('--seed', default=5, type=int, help='seed')
     
     parser.add_argument('--device', default='cpu', type=str, help='cpu or gpu')
 
@@ -35,13 +37,19 @@ def parse_args(mode='train'):
     parser.add_argument('--clip_grad', default=10, type=int, help='clip grad')
     parser.add_argument('--patience', default=5, type=int, help='for early stopping')
     
+
     parser.add_argument('--log_steps', default=50, type=int, help='print log per n steps')
     
+
     ### 중요 ###
     parser.add_argument('--model', default='lstm', type=str, help='model type')
     parser.add_argument('--optimizer', default='adam', type=str, help='optimizer type')
     parser.add_argument('--scheduler', default='plateau', type=str, help='scheduler type')
+
+    # custom
+    parser.add_argument('--wandb_name', default=None, type=str, help='wandb name')
+    parser.add_argument('--emb_size', default=100, type=int)
     
-    args = parser.parse_args()
+    args = parser.parse_args([])
 
     return args

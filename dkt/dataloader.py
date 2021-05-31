@@ -47,7 +47,6 @@ class Preprocess:
             
         for col in cate_cols:
             le = LabelEncoder()
-
             if is_train:
                 #For UNKNOWN class
                 a = df[col].unique().tolist() + ['unknown']
@@ -60,7 +59,7 @@ class Preprocess:
                 df[col] = df[col].apply(lambda x: x if x in le.classes_ else 'unknown')
 
             #모든 컬럼이 범주형이라고 가정
-            df[col] = df[col].astype(str)
+            df[col]= df[col].astype(str)
             test = le.transform(df[col])
             df[col] = test
             
@@ -163,18 +162,18 @@ def collate(batch):
         for i, col in enumerate(row):
             pre_padded = torch.zeros(max_seq_len)
             pre_padded[-len(col):] = col
-            col_list[i].append(pre_padded)
+            col_list[i].append(pre_padded)  # padding을 앞에 추가?
 
 
     for i, _ in enumerate(col_list):
-        col_list[i] =torch.stack(col_list[i])
+        col_list[i] = torch.stack(col_list[i])
     
     return tuple(col_list)
 
 
 def get_loaders(args, train, valid):
 
-    pin_memory = False
+    pin_memory = True
     train_loader, valid_loader = None, None
     
     if train is not None:
