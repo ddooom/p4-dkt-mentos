@@ -14,7 +14,6 @@ except:
 
 
 class LSTM(nn.Module):
-
     def __init__(self, args):
         super(LSTM, self).__init__()
         self.args = args
@@ -87,6 +86,7 @@ class LSTM(nn.Module):
         preds = self.activation(out).view(batch_size, -1)
 
         return preds
+
 
 
 class LSTMATTN(nn.Module):

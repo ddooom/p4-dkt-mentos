@@ -8,7 +8,7 @@ from .optimizer import get_optimizer
 from .scheduler import get_scheduler
 from .criterion import get_criterion
 from .metric import get_metric
-from .model import *
+from .model import LSTM
 
 import wandb
 
@@ -46,7 +46,7 @@ def run(args, train_data, valid_data):
                 'epoch': epoch + 1,
                 'state_dict': model_to_save.state_dict(),
                 },
-                args.model_dir, f'{args.config}.pt',
+                args.model_dir, 'model.pt',
             )
             early_stopping_counter = 0
         else:
@@ -54,7 +54,6 @@ def run(args, train_data, valid_data):
             if early_stopping_counter >= args.patience:
                 print(f'EarlyStopping counter: {early_stopping_counter} out of {args.patience}')
                 break
-        print()
 
         # scheduler
         if args.scheduler == 'plateau':
@@ -139,7 +138,7 @@ def validate(valid_loader, model, args):
     # Train AUC / ACC
     auc, acc = get_metric(total_targets, total_preds)
     
-    print(f'VALID AUC : {auc} ACC : {acc}')
+    print(f'VALID AUC : {auc} ACC : {acc}\n')
 
     return auc, acc, total_preds, total_targets
 
@@ -159,6 +158,7 @@ def inference(args, test_data):
 
         preds = model(input)
         
+
         # predictions
         preds = preds[:,-1]
         
@@ -170,7 +170,7 @@ def inference(args, test_data):
             
         total_preds+=list(preds)
 
-    write_path = os.path.join(args.output_dir, f"{args.config}.csv")
+    write_path = os.path.join(args.output_dir, "output.csv")
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)    
     with open(write_path, 'w', encoding='utf8') as w:
@@ -276,7 +276,7 @@ def save_checkpoint(state, model_dir, model_filename):
 def load_model(args):
     
     
-    model_path = os.path.join(args.model_dir, f'{args.config}.pt')
+    model_path = os.path.join(args.model_dir, args.model_name)
     print("Loading Model from:", model_path)
     load_state = torch.load(model_path)
     model = get_model(args)

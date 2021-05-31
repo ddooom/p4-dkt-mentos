@@ -8,7 +8,7 @@ from .optimizer import get_optimizer
 from .scheduler import get_scheduler
 from .criterion import get_criterion
 from .metric import get_metric
-from .model import *
+from .model import LSTM, Bert, LSTMATTN
 
 import wandb
 
@@ -25,19 +25,20 @@ def run(args, train_data, valid_data):
 
     best_auc = -1
     early_stopping_counter = 0
-    for epoch in range(args.n_epochs):
 
+    for epoch in range(args.n_epochs):
         print(f"Start Training: Epoch {epoch + 1}")
         
         ### TRAIN
         train_auc, train_acc, train_loss = train(train_loader, model, optimizer, args)
         
         ### VALID
-        auc, acc,_ , _ = validate(valid_loader, model, args)
+        auc, acc, _ , _ = validate(valid_loader, model, args)
 
         ### TODO: model save or early stopping
         wandb.log({"epoch": epoch, "train_loss": train_loss, "train_auc": train_auc, "train_acc":train_acc,
                   "valid_auc":auc, "valid_acc":acc})
+
         if auc > best_auc:
             best_auc = auc
             # torch.nn.DataParallel로 감싸진 경우 원래의 model을 가져옵니다.
@@ -46,7 +47,7 @@ def run(args, train_data, valid_data):
                 'epoch': epoch + 1,
                 'state_dict': model_to_save.state_dict(),
                 },
-                args.model_dir, f'{args.config}.pt',
+                args.model_dir, 'model.pt',
             )
             early_stopping_counter = 0
         else:
@@ -54,7 +55,6 @@ def run(args, train_data, valid_data):
             if early_stopping_counter >= args.patience:
                 print(f'EarlyStopping counter: {early_stopping_counter} out of {args.patience}')
                 break
-        print()
 
         # scheduler
         if args.scheduler == 'plateau':
@@ -139,14 +139,13 @@ def validate(valid_loader, model, args):
     # Train AUC / ACC
     auc, acc = get_metric(total_targets, total_preds)
     
-    print(f'VALID AUC : {auc} ACC : {acc}')
+    print(f'VALID AUC : {auc} ACC : {acc}\n')
 
     return auc, acc, total_preds, total_targets
 
 
 
 def inference(args, test_data):
-    
     model = load_model(args)
     model.eval()
     _, test_loader = get_loaders(args, None, test_data)
@@ -170,7 +169,7 @@ def inference(args, test_data):
             
         total_preds+=list(preds)
 
-    write_path = os.path.join(args.output_dir, f"{args.config}.csv")
+    write_path = os.path.join(args.output_dir, "output.csv")
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)    
     with open(write_path, 'w', encoding='utf8') as w:
@@ -190,17 +189,13 @@ def get_model(args):
     if args.model == 'lstmattn': model = LSTMATTN(args)
     if args.model == 'bert': model = Bert(args)
     
-
     model.to(args.device)
-
     return model
 
 
 # 배치 전처리
 def process_batch(batch, args):
-
     test, question, tag, correct, mask = batch
-    
     
     # change to float
     mask = mask.type(torch.FloatTensor)
@@ -274,9 +269,7 @@ def save_checkpoint(state, model_dir, model_filename):
 
 
 def load_model(args):
-    
-    
-    model_path = os.path.join(args.model_dir, f'{args.config}.pt')
+    model_path = os.path.join(args.model_dir, args.model_name)
     print("Loading Model from:", model_path)
     load_state = torch.load(model_path)
     model = get_model(args)
@@ -284,6 +277,5 @@ def load_model(args):
     # 1. load model state
     model.load_state_dict(load_state['state_dict'], strict=True)
    
-    
     print("Loading Model from:", model_path, "...Finished.")
     return model

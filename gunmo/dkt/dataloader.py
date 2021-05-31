@@ -46,9 +46,8 @@ class Preprocess:
             os.makedirs(self.args.asset_dir)
             
         for col in cate_cols:
-            
-            
             le = LabelEncoder()
+
             if is_train:
                 #For UNKNOWN class
                 a = df[col].unique().tolist() + ['unknown']
@@ -61,7 +60,7 @@ class Preprocess:
                 df[col] = df[col].apply(lambda x: x if x in le.classes_ else 'unknown')
 
             #모든 컬럼이 범주형이라고 가정
-            df[col]= df[col].astype(str)
+            df[col] = df[col].astype(str)
             test = le.transform(df[col])
             df[col] = test
             
