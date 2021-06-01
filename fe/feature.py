@@ -99,7 +99,7 @@ class FEPipeline:
         logger.info(f"Original DataFrame Keywords: {original_columns}")
         logger.info(f"Feature Added DataFrame Keywords: {df.columns}")
 
-        self.df = df
+        return df
 
-    def get_feature_df(self, keys):
-        return self.df[keys]
+    def get_feature_df(self, df, keys):
+        return df[keys]
