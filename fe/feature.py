@@ -18,12 +18,12 @@ class FEBase:
     pre_fe: set = None  # 선행되어야 하는 Feature Engineering
     no_fe: set = None  # 같이 사용되면 안되는 Feature Engineering
     description = {
-            "userID": "사용자의 고유 번호입니다. 총 7,442명의 학생이 있습니다",
-            "assessmentItemID": "사용자가 푼 문항의 일련 번호입니다.",
-            "testID": "사용자가 푼 문항이 포함된 시험지의 일련 번호입니다.",
-            "answerCode": "사용자가 푼 문항의 정답 여부를 담고 있는 이진 (0/1) 데이터입니다.",
-            "Timestamp": "사용자가 문항을 푼 시간 정보입니다.",
-            "KnowledgeTag": "사용자가 푼 문항의 고유 태그가 담겨져 있습니다.",
+        "userID": "사용자의 고유 번호입니다. 총 7,442명의 학생이 있습니다",
+        "assessmentItemID": "사용자가 푼 문항의 일련 번호입니다.",
+        "testID": "사용자가 푼 문항이 포함된 시험지의 일련 번호입니다.",
+        "answerCode": "사용자가 푼 문항의 정답 여부를 담고 있는 이진 (0/1) 데이터입니다.",
+        "Timestamp": "사용자가 문항을 푼 시간 정보입니다.",
+        "KnowledgeTag": "사용자가 푼 문항의 고유 태그가 담겨져 있습니다.",
     }
 
     @classmethod
