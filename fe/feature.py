@@ -11,6 +11,7 @@ import pandas as pd
 logger = logging.getLogger("feature")
 logger.setLevel(logging.INFO)
 
+
 class FEBase:
     name: str = None  # Fature Engineering 이름
     pre_fe: set = None  # 선행되어야 하는 Feature Engineering
