@@ -190,6 +190,8 @@ class Bert(nn.Module):
     def __init__(self, args):
         super(Bert, self).__init__()
         self.args = args
+        cate_size = len(self.args.cate_cols) + 1 # interaction
+        cont_size = len(self.args.cont_cols)
 
         #1 Embedding 
         # interaction은 현재 correct으로 구성되어있다. correct(1, 2) + padding(0)
@@ -199,17 +201,11 @@ class Bert(nn.Module):
         self.embedding_tag = nn.Embedding(self.args.n_cols['KnowledgeTag'] + 1, self.args.hidden_dim)
 
 
-        #2 embedding projection
-
-        cate_size = len(self.args.cate_cols) + 1 # interaction
-        # cate_size = 2
-
+        # embedding projection
         self.cate_proj = nn.Sequential(
             nn.Linear((self.args.hidden_dim) * cate_size, self.args.hidden_dim),
             nn.LayerNorm(self.args.hidden_dim),
         )
-
-        cont_size = len(self.args.cont_cols)
 
         self.cont_bn = nn.BatchNorm1d(cont_size)
         self.cont_proj = nn.Sequential(
@@ -258,17 +254,17 @@ class Bert(nn.Module):
 
 
     def forward(self, inputs):
-        #3 process_batch의 return
+        #2 process_batch의 return
         test, question, tag, tail_prob, mask, interaction, gather_index, correct = inputs
         batch_size = interaction.size(0)
 
-        #4 신나는 embedding
+        #3 신나는 embedding
         embed_interaction = self.embedding_interaction(interaction)
         embed_test = self.embedding_test(test)
         embed_question = self.embedding_question(question)
         embed_tag = self.embedding_tag(tag)
 
-        #5
+        #4
         # (batch_size, max_seq_len, hidden_dim * n) : (64, 20, 64 * n) 
         cate_embed = torch.cat([
                     embed_interaction,
@@ -278,7 +274,7 @@ class Bert(nn.Module):
                     embed_test,
                 ], 2)
 
-        #6
+        #5
         # (batch_size, max_seq_len * n) : (64, 20 * n) 
         cont_cat = torch.cat([
                 tail_prob,            
