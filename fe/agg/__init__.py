@@ -10,15 +10,9 @@ class AggFeBase(FEBase):
     fe_type = "agg"
 
     @classmethod
-    def transform(cls, df, is_train):
-        save_path = cls.get_save_path(is_train)
-
-        if p.exists(save_path):
-            right_df = cls.load_feature_df(save_path)
-        else:
-            right_df = cls._transform(df)
-            cls.save_feature_df(right_df, save_path)
-
+    def transform(cls, df):
+        """ 사용자가 푼 문항수를 만듭니다. """
+        right_df = pd.DataFrame(df.groupby("userID").size(), columns=["quesCnt"]).reset_index()
         df = df.merge(right_df, how="inner", on="userID")
         return df
 

@@ -44,7 +44,7 @@ class MakeFirstClass(SeqFeBase):
         new_df = pd.DataFrame()
         new_df["firstClass"] = df["testId"].apply(lambda x: x[2:3])
         new_df["firstClass"] = new_df["firstClass"].astype(str)
-        return df
+        return new_df
 
 
 class MakeSecondClass(SeqFeBase):

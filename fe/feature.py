@@ -60,12 +60,12 @@ class FEPipeline:
         logger.addHandler(log_file_handler)
 
     def description(self):
-        logging.info("Feature Description")
+        print("Feature Description")
 
         for fe in self.fes:
-            logger.info(f"Feature Engineering Name: {fe.name}")
+            print(f"Feature Engineering Name: {fe.name}")
             for k, v in fe.description.items():
-                logger.info(f"{k:<15} : {v}")
+                print(f" - {k:<15} : {v}")
 
     def debug(self):
         pre_fe = set()
