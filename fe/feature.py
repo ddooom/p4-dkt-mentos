@@ -60,12 +60,13 @@ class FEPipeline:
         logger.addHandler(log_file_handler)
 
     def description(self):
-        print("Feature Description")
+        print("[Feature Descriptions]")
 
         for fe in self.fes:
-            print(f"Feature Engineering Name: {fe.name}")
+            print(f"\nfeature name : {fe.name}")
+            print(f"feature type : {fe.fe_type}")
             for k, v in fe.description.items():
-                print(f" - {k:<15} : {v}")
+                print(f" - {k:<20} : {v}")
 
     def debug(self):
         pre_fe = set()
@@ -83,22 +84,23 @@ class FEPipeline:
     def transform(self, df, is_train):
         logger.info("Feature Engineering Start ... ")
         original_columns = df.columns
+        self.df = df
 
         for fe in self.fes:
-            df = fe.transform(df, is_train)
+            self.df = fe.transform(self.df, is_train)
             logger.info(f"\nFeature Engineering Name: {fe.name}")
 
             for k, v in fe.description.items():
                 logger.info(f"\n{k:<15} : {v}")
-                logger.info(f"dtype: {df[k].dtype}")
+                logger.info(f"dtype: {self.df[k].dtype}")
                 logger.info("[Examples]")
 
-                for idx in range(0, min(1000, len(df)), 100):
-                    logger.info(f"INDEX {idx:<04}: {df.iloc[idx][k]}")
+                for idx in range(0, min(1000, len(self.df)), 100):
+                    logger.info(f"INDEX {idx:<04}: {self.df.iloc[idx][k]}")
 
         logger.info("Feature Engineering End ... ")
         logger.info(f"Original DataFrame Keywords: {original_columns}")
-        logger.info(f"Feature Added DataFrame Keywords: {df.columns}")
+        logger.info(f"Feature Added DataFrame Keywords: {self.df.columns}")
 
         return df
 

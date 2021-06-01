@@ -10,9 +10,16 @@ class AggFeBase(FEBase):
     fe_type = "agg"
 
     @classmethod
-    def transform(cls, df):
+    def transform(cls, df, is_train):
         """ 사용자가 푼 문항수를 만듭니다. """
-        right_df = pd.DataFrame(df.groupby("userID").size(), columns=["quesCnt"]).reset_index()
+        save_path = cls.get_save_path(is_train)
+
+        if p.exists(save_path):
+            right_df = cls.load_feature_df(save_path)
+        else:
+            right_df = cls._transform(df)
+            cls.save_feature_df(right_df, save_path)
+
         df = df.merge(right_df, how="inner", on="userID")
         return df
 
@@ -38,7 +45,7 @@ class MakeCorrectCount(AggFeBase):
         grouped_df = df.groupby("userID").sum()
         right_df = pd.DataFrame(
             {"userID": list(grouped_df.index), "correctCnt": list(grouped_df.answerCode)}
-        ).reset_index()
+        )
         return right_df
 
 
@@ -50,9 +57,10 @@ class MakeCorrectPercent(AggFeBase):
     @classmethod
     def _transform(cls, df):
         """ 사용자의 정답률을 만듭니다. """
-        right_df = pd.DataFrame()
-        right_df["userID"] = df["userID"]
-        right_df["correctPer"] = df["correctCnt"] / df["quesCnt"]
+        grouped_df = df.groupby("userID").mean()
+        right_df = pd.DataFrame(
+            {"userID": list(grouped_df.index), "correctPer": list(grouped_df.correctCnt / grouped_df.quesCnt)}
+        )
         return right_df
 
 
@@ -77,5 +85,5 @@ class MakeTopNCorrectPercent(AggFeBase):
             "top100CorrectPer": list(grouped_df.apply(lambda x: np.mean(x["answerCode"][-100:]))),
         }
 
-        right_df = pd.DataFrame(right_df).reset_index()
+        right_df = pd.DataFrame(right_df)
         return right_df
