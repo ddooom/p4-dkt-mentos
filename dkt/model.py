@@ -1,9 +1,11 @@
+import math
+import copy
+
 import torch
+import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-import copy
-import math
+
 
 try:
     from transformers.modeling_bert import BertConfig, BertEncoder, BertModel
@@ -47,7 +49,6 @@ class LSTM(nn.Module):
         return (h, c)
 
     def forward(self, input):
-
         test, question, tag, _, mask, interaction, _ = input
 
         batch_size = interaction.size(0)
