@@ -7,10 +7,9 @@ from typing import List
 
 import pandas as pd
 
-from logger import get_logger
 
-logger = get_logger("feature")
-
+logger = logging.getLogger("feature")
+logger.setLevel(logging.INFO)
 
 class FEBase:
     name: str = None  # Fature Engineering 이름
@@ -79,22 +78,21 @@ class FEPipeline:
 
             pre_fe.add(fe.name)
 
-        logging.info("Debug Completed! You can transform!")
-
     def transform(self, df):
         logger.info("Feature Engineering Start ... ")
         original_columns = df.columns
 
         for fe in self.fes:
-            df = fe.transform(df, self.args)
-            logger.info(f"Feature Engineering Name: {fe.name}")
+            df = fe.transform(df)
+            logger.info(f"\nFeature Engineering Name: {fe.name}")
 
-            for k, v in fe.description:
-                logger.info(f"{k:<15} : {v}")
+            for k, v in fe.description.items():
+                logger.info(f"\n{k:<15} : {v}")
+                logger.info(f"dtype: {df[k].dtype}")
                 logger.info("[Examples]")
 
                 for idx in range(0, min(1000, len(df)), 100):
-                    logger.info(f"INDEX {idx:<03}: {df.iloc[idx][k]}")
+                    logger.info(f"INDEX {idx:<04}: {df.iloc[idx][k]}")
 
         logger.info("Feature Engineering End ... ")
         logger.info(f"Original DataFrame Keywords: {original_columns}")
