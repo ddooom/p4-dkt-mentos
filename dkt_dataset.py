@@ -134,7 +134,8 @@ class Preprocess:
             labels = self.datas["train"][k].unique().tolist() + ["unknown"]
 
             # Train Fit Transform
-            self.datas["train"][k] = encoders[k].fit_transform(labels)
+            encoders[k].fit(labels)
+            self.datas["train"][k] = encoders[k].transform(self.datas["train"][k])
 
             # Valid Transform
             self.datas["valid"][k] = self.datas["valid"][k].apply(lambda x: x if x in labels else "unknown")
