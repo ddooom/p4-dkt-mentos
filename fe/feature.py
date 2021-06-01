@@ -18,33 +18,34 @@ class FEBase:
     no_fe: set = None  # 같이 사용되면 안되는 Feature Engineering
 
     @classmethod
-    def get_save_path(cls):
+    def get_save_path(cls, is_train):
         save_dir = p.join(os.environ["HOME"], "features")
+        prefix = "train" if is_train else "test"
 
         if not p.exists(save_dir):
             os.mkdir(save_dir)
 
-        save_path = p.join(save_dir, f"{cls.name}.pkl")
+        save_path = p.join(save_dir, f"{prefix}_{cls.name}.pkl")
         return save_path
 
     @classmethod
-    def save_feature_df(cls, df: pd.DataFrame):
-        save_path = cls.get_save_path()
-
+    def save_feature_df(cls, df: pd.DataFrame, save_path):
         with open(save_path, "wb") as f:
             pickle.dump(df, f)
 
         print(f"save features dataframe to {save_path} ...")
 
     @classmethod
-    def load_feature_df(cls):
-        load_path = cls.get_save_path()
-
+    def load_feature_df(cls, load_path):
         with open(load_path, "rb") as f:
             right_df = pickle.load(f)
 
         print(f"load features {load_path} to dataframe ... ")
         return right_df
+
+    @classmethod
+    def transform(cls, df):
+        raise NotImplementedError
 
 
 class FEPipeline:
@@ -79,12 +80,12 @@ class FEPipeline:
 
             pre_fe.add(fe.name)
 
-    def transform(self, df):
+    def transform(self, df, is_train):
         logger.info("Feature Engineering Start ... ")
         original_columns = df.columns
 
         for fe in self.fes:
-            df = fe.transform(df)
+            df = fe.transform(df, is_train)
             logger.info(f"\nFeature Engineering Name: {fe.name}")
 
             for k, v in fe.description.items():
