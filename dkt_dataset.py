@@ -172,9 +172,10 @@ class Preprocess:
 
 
 class DKTDataset(torch.utils.data.Dataset):
-    def __init__(self, data, args):
+    def __init__(self, data, args, columns):
         self.data = data
         self.args = args
+        self.columns = columns
 
     def __getitem__(self, index):
         row = self.data[index]
