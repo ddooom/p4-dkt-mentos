@@ -1,4 +1,6 @@
+import time
 import os.path as p
+from datetime import datetime
 
 import pandas as pd
 from fe.feature import FEBase
@@ -23,14 +25,29 @@ class SeqFeBase(FEBase):
 
 class SplitAssessmentItemID(SeqFeBase):
     name = "split_assessmentitem_id"
-    description = {"test_paper": "시험지 번호입니다.", "test_paper_cnt": "시험지의 문항 번호입니다."}
+    description = {"testPaper": "시험지 번호입니다.", "testPaperCnt": "시험지의 문항 번호입니다."}
 
     @classmethod
     def _transform(cls, df):
         """ 시험지 번호,  시험지 내 문항의 번호를 추가합니다. """
         new_df = pd.DataFrame()
-        new_df["test_paper"] = df["assessmentItemID"].apply(lambda x: x[1:7])
-        new_df["test_paper_cnt"] = df["assessmentItemID"].apply(lambda x: x[7:10])
+        new_df["testPaper"] = df["assessmentItemID"].apply(lambda x: x[1:7])
+        new_df["testPaperCnt"] = df["assessmentItemID"].apply(lambda x: x[7:10])
+        return new_df
+
+
+class ConvertTime(SeqFeBase):
+    name = "convert_time"
+    description = {"timeSec": "사용자가 문항을 푼 타임스태프 정보입니다."}
+
+    @classmethod
+    def _transform(cls, df):
+        def convert_time(s):
+            timestamp = time.mktime(datetime.strptime(s, "%Y-%m-%d %H:%M:%S").timetuple())
+            return int(timestamp)
+
+        new_df = pd.DataFrame()
+        new_df["timeSec"] = df["Timestamp"].apply(convert_time)
         return new_df
 
 
