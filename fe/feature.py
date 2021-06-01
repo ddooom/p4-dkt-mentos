@@ -67,6 +67,7 @@ class FEPipeline:
 
         log_file_handler = logging.FileHandler(p.join(self.args.root_dir, "features.log"))
         logger.addHandler(log_file_handler)
+        logger.addHandler(logging.StreamHandler())
 
     def description(self):
         print("[Feature Descriptions]")
