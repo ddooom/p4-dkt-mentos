@@ -79,17 +79,39 @@ class Preprocess:
         """ 2 사이클 증강 """
 
         logger.info("Group By (userID, testPaper)")
-        grouped = self.datas["train"].groupby(["userID", "testPaper"]).apply(lambda r: self._make_rows_to_sequence(r))
-        self.datas["train_grouped"] = grouped.values
-        logger.info(f"Group By (userID, testPaper) Length: {len(self.datas['train_grouped'])}")
+        t_grouped = self.datas["train"].groupby(["userID", "testPaper"]).apply(lambda r: self._make_rows_to_sequence(r))
+        v_grouped = self.datas["valid"].groupby(["userID", "testPaper"]).apply(lambda r: self._make_rows_to_sequence(r))
+        tt_grouped = self.datas["test"].groupby(["userID", "testPaper"]).apply(lambda r: self._make_rows_to_sequence(r))
+
+        self.datas["train_grouped"] = t_grouped.values
+        self.datas["valid_grouped"] = v_grouped.values
+        self.datas["test_grouped"] = tt_grouped.values
+
+        logger.info(f"Group By (userID, testPaper) Train Length: {len(self.datas['train_grouped'])}")
+        logger.info(f"Group By (userID, testPaper) Valid Length: {len(self.datas['valid_grouped'])}")
+        logger.info(f"Group By (userID, testPaper) Test Length: {len(self.datas['test_grouped'])}")
 
     def _data_augmentation_user_testid(self):
         """ 3 대분류 증강 """
 
         logger.info("Group By (userID, firstClass)")
-        grouped = self.datas["train"].groupby(["userID", "firstClass"]).apply(lambda r: self._make_rows_to_sequence(r))
-        self.datas["train_grouped"] = grouped.values
+        t_grouped = (
+            self.datas["train"].groupby(["userID", "firstClass"]).apply(lambda r: self._make_rows_to_sequence(r))
+        )
+        v_grouped = (
+            self.datas["valid"].groupby(["userID", "firstClass"]).apply(lambda r: self._make_rows_to_sequence(r))
+        )
+        tt_grouped = (
+            self.datas["test"].groupby(["userID", "firstClass"]).apply(lambda r: self._make_rows_to_sequence(r))
+        )
+
+        self.datas["train_grouped"] = t_grouped.values
+        self.datas["valid_grouped"] = v_grouped.values
+        self.datas["test_grouped"] = tt_grouped.values
+
         logger.info(f"Group By (userID, firstClass) Length: {len(self.datas['train_grouped'])}")
+        logger.info(f"Group By (userID, firstClass) Length: {len(self.datas['valid_grouped'])}")
+        logger.info(f"Group By (userID, firstClass) Length: {len(self.datas['test_grouped'])}")
 
     def data_augmentation(self, choices=[1, 2]):
         """그룹핑을 사용하여 데이터 증강을 합니다.
@@ -135,14 +157,17 @@ class Preprocess:
 
             # Train Fit Transform
             encoders[k].fit(labels)
+            self.datas["train"][k] = self.datas["train"][k].astype(str)
             self.datas["train"][k] = encoders[k].transform(self.datas["train"][k])
 
             # Valid Transform
             self.datas["valid"][k] = self.datas["valid"][k].apply(lambda x: x if x in labels else "unknown")
+            self.datas["valid"][k] = self.datas["valid"][k].astype(str)
             self.datas["valid"][k] = encoders[k].transform(self.datas["valid"][k])
 
             # Test Transform
             self.datas["test"][k] = self.datas["test"][k].apply(lambda x: x if x in labels else "unknown")
+            self.datas["test"][k] = self.datas["test"][k].astype(str)
             self.datas["test"][k] = encoders[k].transform(self.datas["test"][k])
 
         if pre_encoders["min_max"]:
