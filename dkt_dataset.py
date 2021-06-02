@@ -2,8 +2,11 @@ import logging
 import os.path as p
 
 import torch
+import seaborn
+import easydict
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler, MinMaxScaler
 
@@ -133,14 +136,18 @@ class Preprocess:
             data_aug[choice]()
 
     def feature_engineering(self):
+        """ Feature engineering을 진행합니다. """
         for key in ["train", "test"]:
             assert self.datas[key] is not None, f"you must loads {key} dataset"
             is_train = True if key == "train" else False
             df = self.fe_pipeline.transform(self.datas[key], is_train=is_train)
             self.datas[key] = df[self.columns]
 
+    def _get_label_histogram(self):
+        pass
+
     def preprocessing(self, pre_encoders):
-        """vector 변환
+        """기계가 처리 가능하도로 변환
         label   : LabelEncoder
         min_max : MinMaxScaler
         std     : StandardScaler
@@ -150,15 +157,25 @@ class Preprocess:
         ), "pre_encoders의 key값을 ('label', 'min_max', 'std') 다 입력해주세요."
 
         encoders = {}
+        self.args.n_embeddings = easydict.EasyDict()
+
+        logger.info("Preprocessing Labels .. ")
+        logger.info(f"Label Columns: {pre_encoders['label']}")
 
         for k in pre_encoders["label"]:
             encoders[k] = LabelEncoder()
             labels = self.datas["train"][k].unique().tolist() + ["unknown"]
 
+            # TODO: Label HistoGram 그리기..?
+            logger.info(f"\nLength of {k:<20} : {len(labels)}")
+
             # Train Fit Transform
             encoders[k].fit(labels)
             self.datas["train"][k] = self.datas["train"][k].astype(str)
+            logger.info(f"Before : {self.datas['train'][k][:10]}")
+
             self.datas["train"][k] = encoders[k].transform(self.datas["train"][k])
+            logger.info(f"After : {self.datas['train'][k][:10]}")
 
             # Valid Transform
             self.datas["valid"][k] = self.datas["valid"][k].apply(lambda x: x if x in labels else "unknown")
@@ -170,12 +187,18 @@ class Preprocess:
             self.datas["test"][k] = self.datas["test"][k].astype(str)
             self.datas["test"][k] = encoders[k].transform(self.datas["test"][k])
 
+            #  fig, axes = plt.subplots(1, 3)
+
+        logger.info("Preprocessing Min Max .. ")
+        logger.info(f"Min Max Columns: {pre_encoders['min_max']}")
+
         if pre_encoders["min_max"]:
             mm_cols = pre_encoders["min_max"]
             mm_encoder = MinMaxScaler()
 
             # Train Fit Transform
             self.datas["train"][mm_cols] = mm_encoder.fit_transform(self.datas["train"][mm_cols])
+            logger.info(f"MAX: {mm_encoder.data_max_} MIN: {mm_encoder.data_min_}")
 
             # Valid Transform
             self.datas["valid"][mm_cols] = mm_encoder.transform(self.datas["valid"][mm_cols])
@@ -183,12 +206,16 @@ class Preprocess:
             # Test Transform
             self.datas["test"][mm_cols] = mm_encoder.transform(self.datas["test"][mm_cols])
 
+        logger.info("Preprocessing Min Max .. ")
+        logger.info(f"Standard Columns: {pre_encoders['std']}")
+
         if pre_encoders["std"]:
             std_cols = pre_encoders["std"]
             std_encoder = StandardScaler()
 
             # Train Fit Transform
             self.datas["train"][std_cols] = std_encoder.fit_transform(self.datas["train"][std_cols])
+            logger.info(f"MEAN: {std_encoder.mean_} VAR: {std_encoder.var_}")
 
             # Valid Transform
             self.datas["valid"][std_cols] = std_encoder.transform(self.datas["valid"][std_cols])
