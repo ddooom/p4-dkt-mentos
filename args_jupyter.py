@@ -49,6 +49,10 @@ def parse_args(mode='train'):
     # custom
     parser.add_argument('--wandb_name', default=None, type=str, help='wandb name')
     parser.add_argument('--emb_size', default=100, type=int)
+    parser.add_argument("--scheduler_step", type=int, default=5)
+    parser.add_argument('--max_lr', type=float, default=1e-4)
+    parser.add_argument('--min_lr', type=float, default=1e-5)
+    parser.add_argument('--data_id', type=str, default='userID')
     
     args = parser.parse_args([])
 

@@ -9,7 +9,7 @@ from .optimizer import get_optimizer, get_lr
 from .scheduler import get_scheduler
 from .criterion import get_criterion
 from .metric import get_metric
-from .model import LSTM, LSTMATTN, Bert
+from .model import LSTM, LSTMATTN, Bert, Transformer, Saint
 
 import wandb
 
@@ -38,7 +38,12 @@ def run(args, train_data, valid_data):
             
     model = get_model(args)
     optimizer = get_optimizer(model, args)
+    # print("optimizer lr 2: ", get_lr(optimizer))
     scheduler = get_scheduler(optimizer, args)
+
+    wandb.watch(model)
+
+    # print("optimizer lr 3: ", get_lr(optimizer))
 
     best_auc = -1
     early_stopping_counter = 0
@@ -67,13 +72,14 @@ def run(args, train_data, valid_data):
                 model_dir, save_name,
             )
             early_stopping_counter = 0
+
+            print(f"Save best AUC model! [{auc}]")
         else:
             early_stopping_counter += 1
             if early_stopping_counter >= args.patience:
                 print(f'EarlyStopping counter: {early_stopping_counter} out of {args.patience}')
                 break
 
-        # scheduler
         if args.scheduler == 'plateau':
             scheduler.step(best_auc)
         else:
@@ -81,6 +87,8 @@ def run(args, train_data, valid_data):
 
 
 def train(train_loader, model, optimizer, args):
+    # scheduler = get_scheduler(optimizer, args)
+
     model.train()
 
     total_preds = []
@@ -93,6 +101,16 @@ def train(train_loader, model, optimizer, args):
 
         loss = compute_loss(preds, targets)
         update_params(loss, model, optimizer, args)
+
+        # print("learning rate: ", get_lr(optimizer))
+
+        # scheduler
+        # if args.scheduler == 'plateau':
+        #     scheduler.step(best_auc)
+        # else:
+        #     scheduler.step()
+
+        # wandb.log({"lr": get_lr(optimizer)})
 
         if step % args.log_steps == 0:
             print(f"Training steps: {step} Loss: {str(loss.item())}")
@@ -207,6 +225,7 @@ def get_model(args):
     if args.model == 'lstmattn': model = LSTMATTN(args)
     if args.model == 'bert': model = Bert(args)
     if args.model == 'transformer' : model = Transformer(args)
+    if args.model == 'saint' : model = Saint(args)
     
 
     model.to(args.device)
@@ -224,12 +243,20 @@ def process_batch(batch, args):
     mask = mask.type(torch.FloatTensor)
     correct = correct.type(torch.FloatTensor)
 
-    #  interaction을 임시적으로 correct를 한칸 우측으로 이동한 것으로 사용
-    #    saint의 경우 decoder에 들어가는 input이다
+    # interaction을 임시적으로 correct를 한칸 우측으로 이동한 것으로 사용
     interaction = correct + 1 # 패딩을 위해 correct값에 1을 더해준다.
     interaction = interaction.roll(shifts=1, dims=1)
-    interaction[:, 0] = 0 # set padding index to the first sequence
-    interaction = (interaction * mask).to(torch.int64)
+    interaction_mask = mask.roll(shifts=1, dims=1)
+    interaction_mask[:, 0] = 0
+    interaction = (interaction * interaction_mask).to(torch.int64)
+
+    # #  interaction을 임시적으로 correct를 한칸 우측으로 이동한 것으로 사용
+    # #    saint의 경우 decoder에 들어가는 input이다
+    # interaction = correct + 1 # 패딩을 위해 correct값에 1을 더해준다.
+    # interaction = interaction.roll(shifts=1, dims=1)
+    # interaction[:, 0] = 0 # set padding index to the first sequence
+    # interaction = (interaction * mask).to(torch.int64)
+
     # print(interaction)
     # exit()
     #  test_id, question_id, tag

@@ -8,6 +8,7 @@ def get_optimizer(model, args):
     
     # 모든 parameter들의 grad값을 0으로 초기화
     optimizer.zero_grad()
+    # print("optimizer lr 1: ", get_lr(optimizer))
     
     return optimizer
 

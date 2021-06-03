@@ -4,3 +4,4 @@ wandb
 output
 *.csv
 models
+saved_models

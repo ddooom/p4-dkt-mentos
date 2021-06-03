@@ -1,0 +1,1 @@
+python train.py --model saint --data_id newID --file_name new_train.csv --wandb_name saint_large --n_epochs 50 --scheduler plateau --lr 1e-4 
