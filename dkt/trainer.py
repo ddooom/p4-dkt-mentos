@@ -8,10 +8,12 @@ from .optimizer import get_optimizer
 from .scheduler import get_scheduler
 from .criterion import get_criterion
 from .metric import get_metric
-from .model import LSTM
+from .model import LSTM, LSTMATTN, Bert, Saint
 
 import wandb
 
+
+# feature 추가 #1~4 수정
 def run(args, train_data, valid_data):
     train_loader, valid_loader = get_loaders(args, train_data, valid_data)
     
@@ -20,25 +22,34 @@ def run(args, train_data, valid_data):
     args.warmup_steps = args.total_steps // 10
             
     model = get_model(args)
+
+    wandb.watch(model)
+    
     optimizer = get_optimizer(model, args)
     scheduler = get_scheduler(optimizer, args)
 
     best_auc = -1
     early_stopping_counter = 0
-
     for epoch in range(args.n_epochs):
+
         print(f"Start Training: Epoch {epoch + 1}")
         
         ### TRAIN
         train_auc, train_acc, train_loss = train(train_loader, model, optimizer, args)
         
         ### VALID
-        auc, acc, _ , _ = validate(valid_loader, model, args)
+        auc, acc,_ , _ = validate(valid_loader, model, args)
+
+        wandb.log({
+            "epoch": epoch, 
+            "train_loss": train_loss, 
+            "train_auc": train_auc, 
+            "train_acc":train_acc,
+            "valid_auc":auc, 
+            "valid_acc":acc,
+            })
 
         ### TODO: model save or early stopping
-        wandb.log({"epoch": epoch, "train_loss": train_loss, "train_auc": train_auc, "train_acc":train_acc,
-                  "valid_auc":auc, "valid_acc":acc})
-
         if auc > best_auc:
             best_auc = auc
             # torch.nn.DataParallel로 감싸진 경우 원래의 model을 가져옵니다.
@@ -47,7 +58,7 @@ def run(args, train_data, valid_data):
                 'epoch': epoch + 1,
                 'state_dict': model_to_save.state_dict(),
                 },
-                args.model_dir, 'model.pt',
+                args.model_dir, f'{args.model}_{args.info}.pt',
             )
             early_stopping_counter = 0
         else:
@@ -70,9 +81,9 @@ def train(train_loader, model, optimizer, args):
     total_targets = []
     losses = []
     for step, batch in enumerate(train_loader):
-        input = process_batch(batch, args)
-        preds = model(input)
-        targets = input[3] # correct
+        inputs = process_batch(batch, args)
+        preds = model(inputs)
+        targets = inputs[-1] # correct
 
 
         loss = compute_loss(preds, targets)
@@ -103,7 +114,7 @@ def train(train_loader, model, optimizer, args):
     # Train AUC / ACC
     auc, acc = get_metric(total_targets, total_preds)
     loss_avg = sum(losses)/len(losses)
-    print(f'TRAIN AUC : {auc} ACC : {acc}')
+    print(f'TRAIN AUC : {auc} ACC : {acc} ') #LR : {optimizer.get}
     return auc, acc, loss_avg
     
 
@@ -113,10 +124,10 @@ def validate(valid_loader, model, args):
     total_preds = []
     total_targets = []
     for step, batch in enumerate(valid_loader):
-        input = process_batch(batch, args)
+        inputs = process_batch(batch, args)
 
-        preds = model(input)
-        targets = input[3] # correct
+        preds = model(inputs)
+        targets = inputs[-1] # correct
 
 
         # predictions
@@ -146,6 +157,7 @@ def validate(valid_loader, model, args):
 
 
 def inference(args, test_data):
+    
     model = load_model(args)
     model.eval()
     _, test_loader = get_loaders(args, None, test_data)
@@ -154,10 +166,11 @@ def inference(args, test_data):
     total_preds = []
     
     for step, batch in enumerate(test_loader):
-        input = process_batch(batch, args)
+        inputs = process_batch(batch, args)
 
-        preds = model(input)
+        preds = model(inputs)
         
+
         # predictions
         preds = preds[:,-1]
         
@@ -169,7 +182,7 @@ def inference(args, test_data):
             
         total_preds+=list(preds)
 
-    write_path = os.path.join(args.output_dir, "output.csv")
+    write_path = os.path.join(args.output_dir, f"{args.model_name[:-3]}.csv")
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)    
     with open(write_path, 'w', encoding='utf8') as w:
@@ -188,14 +201,20 @@ def get_model(args):
     if args.model == 'lstm': model = LSTM(args)
     if args.model == 'lstmattn': model = LSTMATTN(args)
     if args.model == 'bert': model = Bert(args)
+    if args.model == 'saint': model = Saint(args)
     
+
     model.to(args.device)
+
     return model
 
 
 # 배치 전처리
 def process_batch(batch, args):
-    test, question, tag, correct, mask = batch
+
+    #1 dataloader #2와 순서를 맞춰주자
+    correct, question, test, tag, mask = batch
+    
     
     # change to float
     mask = mask.type(torch.FloatTensor)
@@ -205,8 +224,9 @@ def process_batch(batch, args):
     #    saint의 경우 decoder에 들어가는 input이다
     interaction = correct + 1 # 패딩을 위해 correct값에 1을 더해준다.
     interaction = interaction.roll(shifts=1, dims=1)
-    interaction[:, 0] = 0 # set padding index to the first sequence
-    interaction = (interaction * mask).to(torch.int64)
+    interaction_mask = mask.roll(shifts=1, dims=1)
+    interaction_mask[:, 0] = 0 # set padding index to the first sequence
+    interaction = (interaction * interaction_mask).to(torch.int64)
     # print(interaction)
     # exit()
     #  test_id, question_id, tag
@@ -214,28 +234,33 @@ def process_batch(batch, args):
     question = ((question + 1) * mask).to(torch.int64)
     tag = ((tag + 1) * mask).to(torch.int64)
 
+    #2 추가 feature
+    # tail_prob = ((tail_prob + 1) * mask).type(torch.FloatTensor)
+
     # gather index
     # 마지막 sequence만 사용하기 위한 index
     gather_index = torch.tensor(np.count_nonzero(mask, axis=1))
     gather_index = gather_index.view(-1, 1) - 1
 
 
-    # device memory로 이동
+    #3 device memory로 이동
 
     test = test.to(args.device)
     question = question.to(args.device)
-
-
     tag = tag.to(args.device)
     correct = correct.to(args.device)
+
+    # tail_prob = tail_prob.to(args.device)
+
     mask = mask.to(args.device)
 
     interaction = interaction.to(args.device)
     gather_index = gather_index.to(args.device)
 
-    return (test, question,
-            tag, correct, mask,
-            interaction, gather_index)
+    #4 
+    # tail_prob
+    return (test, question, tag,
+            mask, interaction, gather_index, correct)
 
 
 # loss계산하고 parameter update!
@@ -252,6 +277,7 @@ def compute_loss(preds, targets):
     loss = torch.mean(loss)
     return loss
 
+
 def update_params(loss, model, optimizer, args):
     loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
@@ -259,13 +285,11 @@ def update_params(loss, model, optimizer, args):
     optimizer.zero_grad()
 
 
-
 def save_checkpoint(state, model_dir, model_filename):
     print('saving model ...')
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)    
     torch.save(state, os.path.join(model_dir, model_filename))
-
 
 
 def load_model(args):
