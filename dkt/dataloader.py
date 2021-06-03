@@ -88,12 +88,10 @@ class Preprocess:
         self.args.n_questions = len(np.load(os.path.join(self.args.asset_dir,'assessmentItemID_classes.npy')))
         self.args.n_test = len(np.load(os.path.join(self.args.asset_dir,'testId_classes.npy')))
         self.args.n_tag = len(np.load(os.path.join(self.args.asset_dir,'KnowledgeTag_classes.npy')))
-        
 
-
-        df = df.sort_values(by=['userID','Timestamp'], axis=0)
-        columns = ['userID', 'assessmentItemID', 'testId', 'answerCode', 'KnowledgeTag']
-        group = df[columns].groupby('userID').apply(
+        df = df.sort_values(by=[self.args.data_id,'Timestamp'], axis=0)
+        columns = [self.args.data_id, 'assessmentItemID', 'testId', 'answerCode', 'KnowledgeTag']
+        group = df[columns].groupby(self.args.data_id).apply(
                 lambda r: (
                     r['testId'].values, 
                     r['assessmentItemID'].values,
