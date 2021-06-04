@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F 
 import numpy as np
 import copy
+import re
 import math
 
 try:
@@ -206,7 +207,7 @@ class Bert(nn.Module):
 
         # embedding projection
         self.cate_proj = nn.Sequential(
-            nn.Linear((self.args.hidden_dim) * (cate_size), self.args.hidden_dim),
+            nn.Linear((self.args.hidden_dim) * (cate_size-2), self.args.hidden_dim),
             nn.LayerNorm(self.args.hidden_dim),
         )
 
@@ -280,8 +281,8 @@ class Bert(nn.Module):
         cate_embed = torch.cat([
                     embed_interaction, 
                     embed_question,
-                    embed_tag,
-                    embed_test,
+                    # embed_tag,
+                    # embed_test,
                 ], 2)
 
         #5
@@ -495,6 +496,127 @@ class Saint(nn.Module):
         out = out.contiguous().view(batch_size, -1, self.args.hidden_dim)
         out = self.fc(out)
 
+        preds = self.activation(out).view(batch_size, -1)
+
+        return preds
+
+
+class TfixupBert(nn.Module):
+    def __init__(self, args):
+        super(TfixupBert, self).__init__()
+        self.args = args
+        self.device = args.device
+
+        # Defining some parameters
+        self.hidden_dim = self.args.hidden_dim
+        self.n_layers = self.args.n_layers
+
+        # Embedding 
+        # interaction은 현재 correct으로 구성되어있다. correct(1, 2) + padding(0)
+        self.embedding_interaction = nn.Embedding(3, self.hidden_dim)
+        self.embedding_test = nn.Embedding(self.args.n_cols['testId'], self.args.hidden_dim)
+        self.embedding_question = nn.Embedding(self.args.n_cols['assessmentItemID'], self.args.hidden_dim)
+        self.embedding_tag = nn.Embedding(self.args.n_cols['KnowledgeTag'], self.args.hidden_dim)
+
+        # embedding combination projection
+        self.comb_proj = nn.Linear((self.hidden_dim)*4, self.hidden_dim)
+
+        # Bert config
+        self.config = BertConfig( 
+            3, # not used
+            hidden_size=self.hidden_dim,
+            num_hidden_layers=self.args.n_layers,
+            num_attention_heads=self.args.n_heads,
+            max_position_embeddings=self.args.max_seq_len          
+        )
+
+        # Defining the layers
+        # Bert Layer
+        self.encoder = BertModel(self.config)  
+
+        # Fully connected layer
+        self.fc = nn.Linear(self.args.hidden_dim, 1)
+       
+        self.activation = nn.Sigmoid()
+        
+        # T-Fixup
+        if True:
+
+            # 초기화 (Initialization)
+            self.tfixup_initialization()
+            print("T-Fixupbb Initialization Done")
+
+            # 스케일링 (Scaling)
+            self.tfixup_scaling()
+            print(f"T-Fixup Scaling Done")
+
+    def tfixup_initialization(self):
+        # 우리는 padding idx의 경우 모두 0으로 통일한다
+        padding_idx = 0
+
+        for name, param in self.named_parameters():
+            if re.match(r'^embedding*', name):
+                nn.init.normal_(param, mean=0, std=param.shape[1] ** -0.5)
+                nn.init.constant_(param[padding_idx], 0)
+            elif re.match(r'.*Norm.*', name):
+                continue
+            elif re.match(r'.*weight*', name):
+                # nn.init.xavier_uniform_(param)
+                nn.init.xavier_normal_(param)
+
+
+    def tfixup_scaling(self):
+        temp_state_dict = {}
+
+        # 특정 layer들의 값을 스케일링한다
+        for name, param in self.named_parameters():
+
+            # TODO: 모델 내부의 module 이름이 달라지면 직접 수정해서
+            #       module이 scaling 될 수 있도록 변경해주자
+            # print(name)
+
+            if re.match(r'^embedding*', name):
+                temp_state_dict[name] = (9 * self.args.n_layers) ** (-1 / 4) * param   
+            elif re.match(r'.*Norm.*', name):
+                continue
+            elif re.match(r'encoder.*dense.*weight$|encoder.*attention.output.*weight$', name):
+                temp_state_dict[name] = (0.67 * (self.args.n_layers) ** (-1 / 4)) * param
+            elif re.match(r"encoder.*value.weight$", name):
+                temp_state_dict[name] = (0.67 * (self.args.n_layers) ** (-1 / 4)) * (param * (2**0.5))
+
+        # 나머지 layer는 원래 값 그대로 넣는다
+        for name in self.state_dict():
+            if name not in temp_state_dict:
+                temp_state_dict[name] = self.state_dict()[name]
+                
+        self.load_state_dict(temp_state_dict)
+
+
+    def forward(self, inputs):
+        test, question, tag, mask, interaction, gather_index, correct = inputs
+        
+        batch_size = interaction.size(0)
+
+        # 신나는 embedding
+        embed_interaction = self.embedding_interaction(interaction)
+        embed_test = self.embedding_test(test)
+        embed_question = self.embedding_question(question)
+        embed_tag = self.embedding_tag(tag)
+
+        embed = torch.cat([embed_interaction,
+                           embed_test,
+                           embed_question,
+                           embed_tag,
+                           ], 2)
+
+        X = self.comb_proj(embed)
+
+        # Bert
+        encoded_layers = self.encoder(inputs_embeds=X, attention_mask=mask)
+        out = encoded_layers[0]
+
+        out = out.contiguous().view(batch_size, -1, self.hidden_dim)
+        out = self.fc(out)
         preds = self.activation(out).view(batch_size, -1)
 
         return preds
