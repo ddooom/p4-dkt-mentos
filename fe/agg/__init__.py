@@ -44,9 +44,7 @@ class MakeCorrectCount(AggFeBase):
     def _transform(cls, df):
         """ 사용자가 맞춘 문항수를 만듭니다. """
         grouped_df = df.groupby("userID").sum()
-        right_df = pd.DataFrame(
-            {"userID": list(grouped_df.index), "correctCnt": list(grouped_df.answerCode)}
-        )
+        right_df = pd.DataFrame({"userID": list(grouped_df.index), "correctCnt": list(grouped_df.answerCode)})
         return right_df
 
 

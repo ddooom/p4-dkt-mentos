@@ -5,82 +5,56 @@ from datetime import datetime
 
 import wandb
 import torch
-import easydict
 import numpy as np
+from torchinfo import summary
 from sklearn.metrics import roc_auc_score, accuracy_score
 
 from logger import get_logger
 from dkt_dataset import DKTDataset
-from utils.criterion import get_criterion
-
-
-def get_args():
-    config = {}
-
-    # 설정
-    config["seed"] = 42
-    config["device"] = "cuda" if torch.cuda.is_available() else "cpu"
-
-    # 데이터
-    config["max_seq_len"] = 20
-    config["num_workers"] = 1
-
-    # 모델
-    config["hidden_dim"] = 64
-    config["n_layers"] = 2
-    config["dropout"] = 0.2
-
-    # 훈련
-    config["n_epochs"] = 20
-    config["batch_size"] = 64
-    config["lr"] = 0.0001
-    config["clip_grad"] = 10
-    config["log_steps"] = 50
-    config["patience"] = 5
-
-    # 중요
-    config["optimizer"] = "adam"
-    config["scheduler"] = "plateau"
-
-    args = easydict.EasyDict(config)
-    return args
+from utils import get_args, get_criterion, get_optimizer, get_scheduler
 
 
 class DKTTrainer:
-    def __init__(self, args, model):
+    def __init__(self, args, Model):
         self.args = get_args()
         self.args.update(**args)
-
-        self.model = model
-        self.root_dir = args.root_dir
+        self.create_model = Model
 
         self._helper_init()
 
-    def _helper_init(self):
-        self.logger = logger
-        self.prefix_save_path = datetime.now().strftime("[%m/%d_%H:%M]")
-        self.prefix_save_path = f"LOG_TRAIN_{self.prefix_save_path}"
+    def _get_model(self):
+        model = self.create_model(self.args).to(self.args.device)
+        return model
 
-    def _update_params(self, loss, model, optimizer, args):
+    def _helper_init(self):
+        self.prefix_save_path = datetime.now().strftime("[%m.%d_%H:%M]")
+        self.prefix_save_path = f"LOG_{self.prefix_save_path}"
+
+        os.mkdir(self.prefix_save_path)
+
+    def _update_params(self, loss, model, optimizer):
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.clip_grad)
         optimizer.step()
         optimizer.zero_grad()
 
-    def _collate_fn(self, batch):
-        col_n = len(batch[0])
-        col_list = [[] for _ in range(col_n)]
+    def _collate_fn(self, batches):
+        """ key값으로 batch 형성 """
+        new_batches = {k: [] for k in batches[0].keys()}
 
-        for row in batch:
-            for i, col in enumerate(row):
-                pre_padded = torch.zeros(self.args.max_seq_len)
-                pre_padded[-len(col) :] = col
-                col_list[i].append(pre_padded)
+        max_seq_len = 20
 
-        for i, _ in enumerate(col_list):
-            col_list[i] = torch.stack(col_list[i])
+        # batch의 값들을 각 column끼리 그룹화
+        for k in batches[0].keys():
+            for batch in batches:
+                pre_padded = torch.zeros(max_seq_len)
+                pre_padded[-len(batch[k]) :] = batch[k]
+                new_batches[k].append(pre_padded)
 
-        return tuple(col_list)
+        for k in batches[0].keys():
+            new_batches[k] = torch.stack(new_batches[k])
+
+        return new_batches
 
     def _get_loaders(self, train_data, valid_data):
         trainset = DKTDataset(train_data, self.args, self.args.columns)
@@ -113,21 +87,24 @@ class DKTTrainer:
             preds = preds.detach().numpy()
         return preds
 
-    def _save_model(self):
-        save_path = p.join(self.root_dir, self.prefix_save_path)
+    def _save_model(self, model, prefix=None):
+        save_path = p.join(self.args.root_dir, self.prefix_save_path)
         assert p.exists(save_path), f"{save_path} does not exist"
 
         # get original model if use torch.nn.DataParallel
-        model = self.model.module if hasattr(self.model, "module") else self.model
-        torch.save(model.state_dict(), f"{save_path}/model.pth")
+        model = model.module if hasattr(model, "module") else model
+        save_path = f"{save_path}/{prefix}_model.pth" if prefix else f"{save_path}/model.pth"
+        torch.save(model.state_dict(), save_path)
 
-    def _load_model(self):
-        load_path = p.join(self.root_dir, self.prefix_save_path)
-        model_path = f"{load_path}/model.pth"
-        assert p.exists(model_path), f"{model_path} does not exist"
+    def _load_model(self, prefix=None):
+        load_path = p.join(self.args.root_dir, self.prefix_save_path)
+        load_path = f"{load_path}/{prefix}_model.pth" if prefix else f"{load_path}/model.pth"
+        assert p.exists(load_path), f"{load_path} does not exist"
 
+        model = self._get_model()
         # strict=False, 일치하지 않는 키들을 무시
-        self.model.load_state_dict(torch.load(model_path), strict=False)
+        model.load_state_dict(torch.load(load_path), strict=False)
+        return model
 
     def _get_metric(self, targets, preds):
         auc = roc_auc_score(targets, preds)
@@ -143,52 +120,28 @@ class DKTTrainer:
         return loss
 
     def _process_batch(self, batch):
-        test, question, tag, correct, mask = batch
+        raise NotImplementedError
 
-        # change to float
-        mask = mask.type(torch.FloatTensor)
-        correct = correct.type(torch.FloatTensor)
+    def hyper_tune(self):
+        raise NotImplementedError
 
-        # interaction을 임시적으로 correct를 한칸 우측으로 이동한 것으로 사용
-        # saint의 경우 decoder에 들어가는 input이다.
-        interaction = correct + 1  # for padding, 0은 padding으로 사용
-        interaction = interaction.roll(shifts=1, dims=1)
-
-        # TODO: 코드 수정되어야 합니다.
-        interaction[:, 0] = 0  # set padding index to the first sequence
-        interaction = (interaction * mask).to(torch.int64)
-
-        test = ((test + 1) * mask).to(torch.int64)
-        question = ((question + 1) * mask).to(torch.int64)
-        tag = ((tag + 1) * mask).to(torch.int64)
-
-        test = test.to(self.args.device)
-        question = question.to(self.args.device)
-
-        tag = tag.to(self.args.device)
-        correct = correct.to(self.args.device)
-        mask = mask.to(self.args.device)
-
-        interaction = interaction.to(self.args.device)
-
-        return (test, question, tag, correct, mask, interaction)
-
-    def _train(self, train_loader, optimizer):
-        self.model.train()
+    def _train(self, model, train_loader, optimizer):
+        model.train()
 
         total_preds, total_targets = [], []
         losses = []
 
         for step, batch in enumerate(train_loader):
             batch = self._process_batch(batch)
-            preds = self.model(batch)
-            targets = batch[3]  # correct
+            preds = model(batch)
+            targets = batch["answerCode"]  # correct
 
             loss = self._compute_loss(preds, targets)
-            self._update_params(loss, self.model, optimizer)
+            self._update_params(loss, model, optimizer)
 
             if step % self.args.log_steps == 0:
-                logger.info(f"Training steps: {step} Loss: {str(loss.item())}")
+                print(f"Training steps: {step} Loss: {str(loss.item())}")
+                wandb.log({"step_train_loss": loss})
 
             preds, targets = preds[:, -1], targets[:, -1]
 
@@ -212,8 +165,8 @@ class DKTTrainer:
 
         return auc, acc, loss_avg
 
-    def _validate(self, train_loader, valid_loader):
-        self.model.eval()
+    def _validate(self, model, valid_loader):
+        model.eval()
 
         total_preds = []
         total_targets = []
@@ -221,8 +174,8 @@ class DKTTrainer:
         for step, batch in enumerate(valid_loader):
             batch = self._process_batch(batch)
 
-            preds = self.model(batch)
-            targets = batch[3]  # correct
+            preds = model(batch)
+            targets = batch["answerCode"]  # correct
 
             # predictions
             preds = preds[:, -1]
@@ -243,58 +196,102 @@ class DKTTrainer:
 
         # Train AUC / ACC
         auc, acc = self._get_metric(total_targets, total_preds)
-        self.logger.info(f"VALID AUC : {auc} ACC : {acc}\n")
+        print(f"VALID AUC : {auc} ACC : {acc}\n")
 
         return auc, acc, total_preds, total_targets
 
-    def inference(self, test_data):
-        self._load_model()  # loaded best model to self.model
-        self.model.eval()
+    def _inference(self, test_data, prefix=None):
+        model = self._load_model(prefix)  # loaded best model to self.model
+        model.eval()
 
         _, test_loader = self._get_loaders(test_data, test_data)
 
-        total_preds = dict()
-        outputs = []
+        total_proba_preds = []
 
         for step, batch in enumerate(test_loader):
             batch = self._process_batch(batch)
-            preds = self.model(batch)
+            preds = model(batch)
             preds = preds[:, -1]
 
             preds = self._to_numpy(preds)
-            total_preds += list(preds)
+            total_proba_preds += list(preds)
 
-        # (test, question, tag, correct, mask, interaction)
+        write_path = os.path.join(self.args.root_dir, f"{prefix}_results.json")
 
-    def debug(self, train_data, valid_data):
-        prefix_save_path = f"LOG_DEBUG_{self.prefix_save_path}"
-        logger.info(f"save_dir: {prefix_save_path}")
-        self.logger.setLevel(logging.DEBUG)
+        with open(write_path, "w", encoding="utf8") as w:
+            w.write("id,prediction\n")
+            for idx, proba in enumerate(total_proba_preds):
+                w.write(f"{idx},{proba}\n")
 
-        self.train()
-        self.validate()
+    def debug(self, train_data, valid_data, test_data):
+        """간단한 입,출력을 테스트합니다.
+        1. Model Summary
+        3. 한 개 데이터가 잘 생성되는지 체크합니다.
+        4. 배치 데이터가 잘 생성되는지 체크합니다.
+        5. forward를 체크합니다.
+        6. Loss 계산 및, Predict를 체크합니다.
+        """
+        debug_file_handler = logging.FileHandler(f"{self.prefix_save_path}/debug.log")
+        logger = get_logger("debug")
+        logger.setLevel(logging.INFO)
+        logger.addHandler(debug_file_handler)
 
-    def hyper_tune(self):
-        self.logger.setLevel(logging.INFO)
+        model = self._get_model()
+        logger.info("MODEl SUMMARY\n")
+        logger.info(summary(model))
 
-        prefix_save_path = f"LOG_HYPER_{self.prefix_save_path}"
-        logger.info(f"save_dir: {prefix_save_path}")
+        logger.info("\nCHECK DATASET")
 
-    def run(self, train_data, valid_data):
-        self.logger.setLevel(logging.INFO)
+        for dataset, name in zip([train_data, valid_data, test_data], ["TRAIN", "VALID", "TEST"]):
+            logger.info(f"\n{name} EXAMPLES")
+            for column, data in zip(self.args.columns, dataset[0]):
+                logger.info(f"{column} : {data[:10]}")
 
+        train_loader, valid_loader = self._get_loaders(train_data, valid_data)
+        _, test_loader = self._get_loaders(test_data, test_data)
+
+        logger.info("\nCHECK BATCH SHAPE")
+        for data_loader, name in zip([train_loader, valid_loader, test_loader], ["TRAIN", "VALID", "TEST"]):
+            batch = next(iter(data_loader))
+            logger.info(f"\n{name} BATCH SHAPE : {batch.shape}")
+
+        logger.info("\nCHECK MODEL FORWARD")
+
+        batch = self._process_batch(batch)
+        preds = model(batch)
+
+        logger.info("\nPREDS SHAPE: {preds.shape}")
+        logger.info("\nPREDS EXAMPLES: {preds[0]}")
+
+        logger.info("\nCHECK METRICS")
+
+        gt = batch["answerCode"]
+        loss = self._compute_loss(preds, gt)
+
+        logger.info(f"\nLOSS : {loss.item()}")
+
+        auc, acc = self._get_metric(self._to_numpy(gt[:, -1], self._to_numpy(preds[:, -1])))
+        logger.info(f"AUC: {auc} ACC: {acc}")
+
+    def run(self, train_data, valid_data, test_data, prefix=None):
+        run_file_handler = logging.FileHandler(f"{self.prefix_save_path}/run.log")
+        logger = get_logger("run")
+        logger.setLevel(logging.INFO)
+        logger.addHandler(run_file_handler)
+
+        model = self._get_model()
         wandb.init(project="p-stage-4")
         wandb.config.update(self.args)
-        wandb.watch(self.model)
+        wandb.watch(model)
         wandb.run.name = self.prefix_save_path
 
-        train_loader, valid_loader = self.get_loaders(train_data, valid_data)
+        train_loader, valid_loader = self._get_loaders(train_data, valid_data)
 
         self.args.total_steps = int(len(train_loader.dataset) / self.args.batch_size) * (self.args.n_epochs)
         self.args.warmup_steps = self.args.total_steps // 10
 
-        optimizer = self._get_optimizer()
-        scheduler = self._get_scheduler(optimizer)
+        optimizer = get_optimizer(model, self.args)
+        scheduler = get_scheduler(optimizer, self.args)
 
         best_auc = -1
         early_stopping_counter = 0
@@ -302,8 +299,8 @@ class DKTTrainer:
         for epoch in range(self.args.n_epochs):
             logger.info(f"Start Training: Epoch {epoch + 1}")
 
-            train_auc, train_acc, train_loss = self._train(train_loader, self.model, optimizer)
-            valid_auc, valid_acc, _, _ = self._validate(valid_loader, self.model)
+            train_auc, train_acc, train_loss = self._train(model, train_loader, optimizer)
+            valid_auc, valid_acc, _, _ = self._validate(model, valid_loader)
 
             wandb.log(
                 {
@@ -318,15 +315,23 @@ class DKTTrainer:
 
             if valid_auc > best_auc:
                 best_auc = valid_auc
-                self._save_model()
+                self._save_model(model, prefix)
                 early_stopping_counter = 0
             else:
                 early_stopping_counter += 1
+                logger.info(f"EarlyStopping counter: {early_stopping_counter}")
                 if early_stopping_counter >= self.args.patience:
-                    self.logger.info(f"EarlyStopping counter: {early_stopping_counter} out of {self.args.patience}")
+                    logger.info(f"EarlyStopping counter: {early_stopping_counter} out of {self.args.patience}")
                     break
 
             if self.args.scheduler == "plateau":
                 scheduler.step(best_auc)
             else:
                 scheduler.step()
+
+        self._inference(test_data)
+
+    def run_cv(self, fold: int, seeds: list):
+        assert fold == len(seeds), "fold와 len(seeds)는 같은 수여야 합니다."
+
+        pass
