@@ -165,6 +165,7 @@ class Preprocess:
         for k in pre_encoders["label"]:
             encoders[k] = LabelEncoder()
             labels = self.datas["train"][k].unique().tolist() + ["unknown"]
+            self.args.n_embeddings[k] = len(labels)
 
             # TODO: Label HistoGram 그리기..?
             logger.info(f"\nLength of {k:<20} : {len(labels)}")
@@ -232,26 +233,29 @@ class DKTDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         row = self.data[index]
+        
+        # 각 data의 sequence length
         seq_len = len(row[0])
 
-        test, question, tag, correct = row[0], row[1], row[2], row[3]
-
-        cate_cols = [test, question, tag, correct]
+        datas = {key: row[idx] for idx, key in enumerate(self.columns)}
 
         # max seq len을 고려하여서 이보다 길면 자르고 아닐 경우 그대로 냅둔다
         if seq_len > self.args.max_seq_len:
-            for i, col in enumerate(cate_cols):
-                cate_cols[i] = col[-self.args.max_seq_len :]
+            for key, value in datas.items():
+                datas[key] = value[-self.args.max_seq_len :]
             mask = np.ones(self.args.max_seq_len, dtype=np.int16)
         else:
             mask = np.zeros(self.args.max_seq_len, dtype=np.int16)
             mask[-seq_len:] = 1
 
         # mask도 columns 목록에 포함시킴
-        cate_cols.append(mask)
+        datas['mask'] = mask
 
         # np.array -> torch.tensor 형변환
-        for i, col in enumerate(cate_cols):
-            cate_cols[i] = torch.tensor(col)
+        for key, value in datas.items():
+            datas[key] = torch.tensor(value)
+        
+        return datas
 
-        return cate_cols
+    def __len__(self):
+        return len(self.data)

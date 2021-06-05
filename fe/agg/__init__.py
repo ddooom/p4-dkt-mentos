@@ -7,7 +7,8 @@ from fe.feature import FEBase
 
 
 class AggFeBase(FEBase):
-    fe_type = "agg"
+    fe_type: str = "agg"
+    agg_column: list = ["userID"]
 
     @classmethod
     def transform(cls, df, is_train):
@@ -20,7 +21,7 @@ class AggFeBase(FEBase):
             right_df = cls._transform(df)
             cls.save_feature_df(right_df, save_path)
 
-        df = df.merge(right_df, how="inner", on="userID")
+        df = df.merge(right_df, how="inner", on=cls.agg_column)
         return df
 
 

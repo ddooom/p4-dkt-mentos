@@ -1,8 +1,30 @@
 import torch
 import torch.nn as nn
 
-from models.dkt import DKTTrainer
+import torch.nn as nn
 
+class EmbeddingLayer(nn.Module):
+    def __init__(self, args, hidden_dim):
+        super(EmbeddingLayer, self).__init__()
+        
+        self.args = args
+        self.device = args.device
+        self.hidden_dim = hidden_dim
+        
+        labels_dim = self.hidden_dim // (len(args.n_embeddings) + 1)
+        interaction_dim = self.hidden_dim - (labels_dim * len(args.n_embeddings)) 
+        
+        self.embedding_interaction = nn.Embedding(3, interaction_dim)
+        self.embeddings = nn.ModuleDict({
+            k: nn.Embedding(v + 1, labels_dim)  # plus 1 for padding
+            for k, v in args.n_embeddings.items()
+        })
+        
+    def forward(self, batch):
+        embed_interaction = self.embedding_interaction(batch['interaction'])
+        embed = torch.cat([embed_interaction] + [self.embeddings[k](batch[k]) for k in args.n_embeddings.keys()], 2)
+        return embed
+        
 
 class LSTM(nn.Module):
     def __init__(self, args):
@@ -12,20 +34,14 @@ class LSTM(nn.Module):
 
         self.hidden_dim = self.args.hidden_dim
         self.n_layers = self.args.n_layers
-
-        self.embedding_interaction = nn.Embedding(3, self.hidden_dim // 3)
-        self.embedding_test = nn.Embedding(self.args.n_test + 1, self.hidden_dim // 3)
-        self.embedding_question = nn.Embedding(self.args.n_questions + 1, self.hidden_dim // 3)
-        self.embedding_tag = nn.Embedding(self.args.n_tag + 1, self.hidden_dim // 3)
-
-        # embedding combination projection
-        self.comb_proj = nn.Linear((self.hidden_dim // 3) * 4, self.hidden_dim)
+        
+        self.emb_layer = EmbeddingLayer(args, self.hidden_dim)
+        self.comb_proj = nn.Linear(self.hidden_dim, self.hidden_dim)
 
         self.lstm = nn.LSTM(self.hidden_dim, self.hidden_dim, self.n_layers, batch_first=True)
-
+        
         # Fully connected layer
         self.fc = nn.Linear(self.hidden_dim, 1)
-
         self.activation = nn.Sigmoid()
 
     def init_hidden(self, batch_size):
@@ -37,20 +53,10 @@ class LSTM(nn.Module):
 
         return (h, c)
 
-    def forward(self, input):
-        test, question, tag, _, mask, interaction, _ = input
-
-        batch_size = interaction.size(0)
-
-        # Embedding
-
-        embed_interaction = self.embedding_interaction(interaction)
-        embed_test = self.embedding_test(test)
-        embed_question = self.embedding_question(question)
-        embed_tag = self.embedding_tag(tag)
-
-        embed = torch.cat([embed_interaction, embed_test, embed_question, embed_tag], 2)
-
+    def forward(self, batch):
+        batch_size = batch['interaction'].size(0)                           
+        embed = self.emb_layer(batch)
+                                   
         X = self.comb_proj(embed)
 
         hidden = self.init_hidden(batch_size)
@@ -61,18 +67,3 @@ class LSTM(nn.Module):
         preds = self.activation(out).view(batch_size, -1)
 
         return preds
-
-
-class LSTMTrainer(DKTTrainer):
-    def __init__(self, args):
-        model = LSTM(args)
-        super().__init__(args, model)
-
-
-def main(args):
-    trainer = LSTMTrainer(args)
-    trainer.run(args, train_data, valid_data)
-
-
-if __name__ == "__main__":
-    args = {}

@@ -9,7 +9,7 @@ import easydict
 import numpy as np
 from sklearn.metrics import roc_auc_score, accuracy_score
 
-from logger import logger
+from logger import get_logger
 from dkt_dataset import DKTDataset
 from utils.criterion import get_criterion
 
@@ -52,7 +52,7 @@ class DKTTrainer:
         self.args.update(**args)
 
         self.model = model
-        self.root_dir = os.path.abspath(__file__)
+        self.root_dir = args.root_dir
 
         self._helper_init()
 
@@ -71,7 +71,6 @@ class DKTTrainer:
         col_n = len(batch[0])
         col_list = [[] for _ in range(col_n)]
 
-        # batch의 값들을 각 column끼리 그룹화
         for row in batch:
             for i, col in enumerate(row):
                 pre_padded = torch.zeros(self.args.max_seq_len)
@@ -84,8 +83,8 @@ class DKTTrainer:
         return tuple(col_list)
 
     def _get_loaders(self, train_data, valid_data):
-        trainset = DKTDataset(train_data, self.args)
-        validset = DKTDataset(valid_data, self.args)
+        trainset = DKTDataset(train_data, self.args, self.args.columns)
+        validset = DKTDataset(valid_data, self.args, self.args.columns)
 
         train_loader = torch.utils.data.DataLoader(
             trainset,

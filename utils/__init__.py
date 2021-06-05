@@ -1,6 +1,16 @@
-import os, random, torch
+import os
+import random
+
+import torch
 import numpy as np
-def setSeeds(seed = 42):
+
+
+def get_root_dir(root_dir):
+    if not os.path.exists(root_dir):
+        os.mkdir(root_dir)
+    return root_dir
+
+def set_seeds(seed = 42):
     # 랜덤 시드를 설정하여 매 코드를 실행할 때마다 동일한 결과를 얻게 합니다.
     os.environ['PYTHONHASHSEED'] = str(seed)
     random.seed(seed)
