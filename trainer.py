@@ -35,7 +35,6 @@ class DKTTrainer:
         with open(save_path, "w") as writer:
             writer.write(json.dumps(args, indent=4, ensure_ascii=False) + "\n")
 
-
     def _get_model(self):
         model = self.create_model(self.args).to(self.args.device)
         return model
@@ -218,13 +217,21 @@ class DKTTrainer:
 
         for step, batch in enumerate(test_loader):
             batch = self._process_batch(batch)
+
+            fancy_index = torch.where(batch["answerCode"][:, -1] == -1)
+            if fancy_index[0].size(0) == 0:
+                continue
+
+            for k in batch.keys():
+                batch[k] = batch[k][fancy_index]
+
             preds = model(batch)
             preds = preds[:, -1]
 
             preds = self._to_numpy(preds)
             total_proba_preds += list(preds)
 
-        write_path = os.path.join(self.args.root_dir, f"{prefix}_results.json")
+        write_path = os.path.join(self.prefix_save_path, f"{prefix}_results.csv")
 
         with open(write_path, "w", encoding="utf8") as w:
             w.write("id,prediction\n")
@@ -283,10 +290,9 @@ class DKTTrainer:
         auc, acc = self._get_metric(self._to_numpy(gt[:, -1]), self._to_numpy(preds[:, -1]))
         logger.info(f"AUC: {auc} ACC: {acc}")
 
-    def run(self, train_data, valid_data, test_data, prefix=None):
+    def run(self, train_data, valid_data, test_data, prefix="run"):
         self._save_config(self.args)
         set_seeds(self.args.seed)
-        
 
         run_file_handler = logging.FileHandler(f"{self.prefix_save_path}/run.log")
         logger = get_logger("run")
@@ -347,7 +353,7 @@ class DKTTrainer:
             else:
                 scheduler.step()
 
-        self._inference(test_data)
+        self._inference(test_data, prefix)
 
     def run_cv(self, fold: int, seeds: list):
         assert fold == len(seeds), "fold와 len(seeds)는 같은 수여야 합니다."
