@@ -8,6 +8,7 @@ import wandb
 import torch
 import numpy as np
 import pandas as pd
+from ray import tune
 from torchinfo import summary
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score, accuracy_score
@@ -15,6 +16,21 @@ from sklearn.metrics import roc_auc_score, accuracy_score
 from logger import get_logger
 from dkt_dataset import DKTDataset
 from utils import get_args, get_criterion, get_optimizer, get_scheduler, set_seeds
+
+
+class CustomStopper(tune.Stopper):
+    def __init__(self, args):
+        self.should_stop = False
+        self.args = args
+
+    def __call__(self, trial_id, result):
+        if not self.should_stop and result["valid_auc"] > 0.83:
+            self.should_stop = True
+
+        return self.should_stop or result["training_iteration"] >= self.args.n_epochs
+
+    def stop_all(self):
+        return self.should_stop
 
 
 class DKTTrainer:
@@ -131,8 +147,68 @@ class DKTTrainer:
     def _process_batch(self, batch):
         raise NotImplementedError
 
-    def hyper_tune(self):
-        raise NotImplementedError
+    def _hyper(self, checkpoint_dir):
+        step = 0
+        checkpoint_path = p.join(checkpoint_dir, "checkpoint")
+
+        model = self._get_model()
+        optimizer = get_optimizer(model, self.args)
+        scheduler = get_scheduler(optimizer, self.args)
+
+        if checkpoint_dir is not None:
+            checkpoint = torch.load(checkpoint_path)
+            model.load_state_dict(checkpoint["model"])
+            optimizer.load_state_dict(checkpoint["optimizer"])
+            scheduler.load_state_dict(checkpoint["scheduler"])
+            step = checkpoint["step"]
+
+        while True:
+            train_auc, train_acc, train_loss = self._train(model, self.train_loader, optimizer)
+            valid_auc, valid_acc, _, _ = self._validate(model, self.valid_loader)
+
+            tune.report(
+                valid_auc=valid_auc,
+                valid_acc=valid_acc,
+                train_auc=train_auc,
+                train_acc=train_acc,
+                train_loss=train_loss,
+            )
+
+            step += 1
+
+            with tune.checkpoint_dir(step=step) as checkpoint_dir:
+                torch.save(
+                    {
+                        "model": model.state_dict(),
+                        "optimizer": optimizer.state_dict(),
+                        "scheduler": scheduler.state_dict(),
+                        "step": step,
+                    },
+                    checkpoint_path,
+                )
+
+    def hyper(self, args, tune_args, train_data, valid_data):
+        self.train_loader, self.valid_loader = self._get_loaders(train_data, valid_data)
+
+        pbt_scheduler = tune.scheduler.PopulationBasedTraining(time_attr="training_iteration", **tune_args)
+
+        stopper = CustomStopper(self.args)
+
+        analysis = tune.run(
+            self._hyper,
+            name="pbt_lstm",
+            mode="max",
+            stop=stopper,
+            num_samples=4,
+            metric="",
+            scheduler=pbt_scheduler,
+            keep_checkpoints_num=2,
+            checkpoint_score_attr="",
+            resources_per_trial={"cpu": 3, "gpu": 1},
+            config=self.args,
+        )
+
+        return analysis
 
     def _train(self, model, train_loader, optimizer):
         model.train()
@@ -302,7 +378,7 @@ class DKTTrainer:
         logger.addHandler(run_file_handler)
 
         model = self._get_model()
-        wandb.init(project="p-stage-4")
+        wandb.init(project="p-stage-4", reinit=True)
         wandb.config.update(self.args)
         wandb.watch(model)
         wandb.run.name = f"{self.prefix_save_path}_{prefix}"
@@ -311,6 +387,12 @@ class DKTTrainer:
 
         self.args.total_steps = int(len(train_loader.dataset) / self.args.batch_size) * (self.args.n_epochs)
         self.args.warmup_steps = self.args.total_steps // 10
+
+        if self.args.scheduler == "linear_warmup":
+            self.args.scheduler_hp = {
+                "num_training_steps": self.args.total_steps,
+                "num_warmup_steps": self.args.warmup_steps,
+            }
 
         optimizer = get_optimizer(model, self.args)
         scheduler = get_scheduler(optimizer, self.args)
@@ -368,6 +450,7 @@ class DKTTrainer:
 
         for n_fold, seed in enumerate(seeds):
             self.args.seed = seed
+            # TODO: User 패턴이 학습이 된다면, 충분히 데이터 유출될 수 있음
             train_data, valid_data = train_test_split(total_data, test_size=0.2, random_state=seed)
             prefix = f"cv_{n_fold}"
 
@@ -379,7 +462,7 @@ class DKTTrainer:
         new_df = pd.DataFrame([])
 
         for idx in range(folds):
-            df = pd.read_csv(p.join(self.prefix_save_path, f"cv_{idx}_results.csv"))
+            df = pd.read_csv(p.join(self.prefix_save_path, f"cv_{idx}_test_results.csv"))
 
             if idx == 0:
                 new_df["id"] = df["id"]
