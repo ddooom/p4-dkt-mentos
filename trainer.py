@@ -199,13 +199,15 @@ class DKTTrainer:
             name="pbt_lstm",
             mode="max",
             stop=stopper,
-            num_samples=4,
+            max_failures=3,
+            num_samples=64,
             metric="",
             scheduler=pbt_scheduler,
             keep_checkpoints_num=2,
-            checkpoint_score_attr="",
+            local_dir="~/ray_results",
+            checkpoint_score_attr="max-valid_auc",
             resources_per_trial={"cpu": 3, "gpu": 1},
-            config=self.args,
+            config=self.args,  # custom search algorithm may ignore this
         )
 
         return analysis
