@@ -1,30 +1,47 @@
 import torch
 import torch.nn as nn
 
-import torch.nn as nn
 
 class EmbeddingLayer(nn.Module):
     def __init__(self, args, hidden_dim):
         super(EmbeddingLayer, self).__init__()
-        
+
         self.args = args
         self.device = args.device
         self.hidden_dim = hidden_dim
-        
-        labels_dim = self.hidden_dim // (len(args.n_embeddings) + 1)
-        interaction_dim = self.hidden_dim - (labels_dim * len(args.n_embeddings)) 
-        
+
+        labels_dim = self.hidden_dim // (len(self.args.n_embeddings) + 1)
+        interaction_dim = self.hidden_dim - (labels_dim * len(self.args.n_embeddings))
+
         self.embedding_interaction = nn.Embedding(3, interaction_dim)
-        self.embeddings = nn.ModuleDict({
-            k: nn.Embedding(v + 1, labels_dim)  # plus 1 for padding
-            for k, v in args.n_embeddings.items()
-        })
-        
+        self.embeddings = nn.ModuleDict(
+            {k: nn.Embedding(v + 1, labels_dim) for k, v in self.args.n_embeddings.items()}  # plus 1 for padding
+        )
+
     def forward(self, batch):
-        embed_interaction = self.embedding_interaction(batch['interaction'])
-        embed = torch.cat([embed_interaction] + [self.embeddings[k](batch[k]) for k in args.n_embeddings.keys()], 2)
+        embed_interaction = self.embedding_interaction(batch["interaction"])
+        embed = torch.cat(
+            [embed_interaction] + [self.embeddings[k](batch[k]) for k in self.args.n_embeddings.keys()], 2
+        )
         return embed
-        
+
+
+class LinearLayer(nn.Module):
+    def __init__(self, args, hidden_dim):
+        super(LinearLayer).__init__()
+
+        self.args = args
+        self.device = args.device
+
+        self.hidden_dim = hidden_dim
+        in_features = len(self.args.n_linears)
+        self.fc_layer = nn.Linear(in_features, self.hidden_dim)
+
+    def forward(self, batch):
+        cont_v = torch.stack([batch[k] for k in self.args.n_linears]).permute(1, 2, 0)
+        output = self.fc_layer(cont_v)
+        return output
+
 
 class LSTM(nn.Module):
     def __init__(self, args):
@@ -34,12 +51,14 @@ class LSTM(nn.Module):
 
         self.hidden_dim = self.args.hidden_dim
         self.n_layers = self.args.n_layers
-        
-        self.emb_layer = EmbeddingLayer(args, self.hidden_dim)
+
+        self.emb_layer = EmbeddingLayer(args, self.hidden_dim // 2)
+        self.nli_layer = LinearLayer(args, self.hidden_dim // 2)
+
         self.comb_proj = nn.Linear(self.hidden_dim, self.hidden_dim)
 
         self.lstm = nn.LSTM(self.hidden_dim, self.hidden_dim, self.n_layers, batch_first=True)
-        
+
         # Fully connected layer
         self.fc = nn.Linear(self.hidden_dim, 1)
         self.activation = nn.Sigmoid()
@@ -54,9 +73,12 @@ class LSTM(nn.Module):
         return (h, c)
 
     def forward(self, batch):
-        batch_size = batch['interaction'].size(0)                           
+        batch_size = batch["interaction"].size(0)
+
         embed = self.emb_layer(batch)
-                                   
+        nnbed = self.nli_layer(batch)
+
+        embed = torch.cat([embed, nnbed], 2)
         X = self.comb_proj(embed)
 
         hidden = self.init_hidden(batch_size)

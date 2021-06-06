@@ -2,11 +2,9 @@ import logging
 import os.path as p
 
 import torch
-import seaborn
 import easydict
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler, MinMaxScaler
 
@@ -158,6 +156,7 @@ class Preprocess:
 
         encoders = {}
         self.args.n_embeddings = easydict.EasyDict()
+        self.args.n_linears = list()
 
         logger.info("Preprocessing Labels .. ")
         logger.info(f"Label Columns: {pre_encoders['label']}")
@@ -188,14 +187,13 @@ class Preprocess:
             self.datas["test"][k] = self.datas["test"][k].astype(str)
             self.datas["test"][k] = encoders[k].transform(self.datas["test"][k])
 
-            #  fig, axes = plt.subplots(1, 3)
-
         logger.info("Preprocessing Min Max .. ")
         logger.info(f"Min Max Columns: {pre_encoders['min_max']}")
 
         if pre_encoders["min_max"]:
             mm_cols = pre_encoders["min_max"]
             mm_encoder = MinMaxScaler()
+            self.args.n_linears[k] += mm_cols
 
             # Train Fit Transform
             self.datas["train"][mm_cols] = mm_encoder.fit_transform(self.datas["train"][mm_cols])
@@ -213,6 +211,7 @@ class Preprocess:
         if pre_encoders["std"]:
             std_cols = pre_encoders["std"]
             std_encoder = StandardScaler()
+            self.args.n_linears[k] += std_cols
 
             # Train Fit Transform
             self.datas["train"][std_cols] = std_encoder.fit_transform(self.datas["train"][std_cols])
@@ -233,7 +232,7 @@ class DKTDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         row = self.data[index]
-        
+
         # 각 data의 sequence length
         seq_len = len(row[0])
 
@@ -249,12 +248,12 @@ class DKTDataset(torch.utils.data.Dataset):
             mask[-seq_len:] = 1
 
         # mask도 columns 목록에 포함시킴
-        datas['mask'] = mask
+        datas["mask"] = mask
 
         # np.array -> torch.tensor 형변환
         for key, value in datas.items():
             datas[key] = torch.tensor(value)
-        
+
         return datas
 
     def __len__(self):
