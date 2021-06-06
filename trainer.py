@@ -7,7 +7,9 @@ from datetime import datetime
 import wandb
 import torch
 import numpy as np
+import pandas as pd
 from torchinfo import summary
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score, accuracy_score
 
 from logger import get_logger
@@ -231,7 +233,7 @@ class DKTTrainer:
             preds = self._to_numpy(preds)
             total_proba_preds += list(preds)
 
-        write_path = os.path.join(self.prefix_save_path, f"{prefix}_results.csv")
+        write_path = os.path.join(self.prefix_save_path, f"{prefix}_test_results.csv")
 
         with open(write_path, "w", encoding="utf8") as w:
             w.write("id,prediction\n")
@@ -294,7 +296,7 @@ class DKTTrainer:
         self._save_config(self.args)
         set_seeds(self.args.seed)
 
-        run_file_handler = logging.FileHandler(f"{self.prefix_save_path}/run.log")
+        run_file_handler = logging.FileHandler(f"{self.prefix_save_path}/{prefix}.log")
         logger = get_logger("run")
         logger.setLevel(logging.DEBUG)
         logger.addHandler(run_file_handler)
@@ -303,7 +305,7 @@ class DKTTrainer:
         wandb.init(project="p-stage-4")
         wandb.config.update(self.args)
         wandb.watch(model)
-        wandb.run.name = self.prefix_save_path
+        wandb.run.name = f"{self.prefix_save_path}_{prefix}"
 
         train_loader, valid_loader = self._get_loaders(train_data, valid_data)
 
@@ -313,7 +315,7 @@ class DKTTrainer:
         optimizer = get_optimizer(model, self.args)
         scheduler = get_scheduler(optimizer, self.args)
 
-        best_auc = -1
+        best_auc, best_acc = -1, -1
         early_stopping_counter = 0
 
         for epoch in range(self.args.n_epochs):
@@ -338,7 +340,7 @@ class DKTTrainer:
             logger.info(f"VALID AUC: {valid_auc} VALID ACC: {valid_acc}\n")
 
             if valid_auc > best_auc:
-                best_auc = valid_auc
+                best_auc, best_acc = valid_auc, valid_acc
                 self._save_model(model, prefix)
                 early_stopping_counter = 0
             else:
@@ -354,6 +356,36 @@ class DKTTrainer:
                 scheduler.step()
 
         self._inference(test_data, prefix)
+        return best_auc, best_acc
 
-    def run_cv(self, fold: int, seeds: list):
-        assert fold == len(seeds), "fold와 len(seeds)는 같은 수여야 합니다."
+    def run_cv(self, train_data, valid_data, test_data, folds: int, seeds: list):
+        assert folds == len(seeds), "fold와 len(seeds)는 같은 수여야 합니다."
+
+        total_data = np.concatenate([train_data, valid_data])
+        self.args.seeds = seeds
+
+        valid_results = {}
+
+        for n_fold, seed in enumerate(seeds):
+            self.args.seed = seed
+            train_data, valid_data = train_test_split(total_data, test_size=0.2, random_state=seed)
+            prefix = f"cv_{n_fold}"
+
+            best_auc, best_acc = self.run(train_data, valid_data, test_data, prefix=prefix)
+            valid_results[prefix] = f"best_auc:{best_auc},best_acc:{best_acc}"
+
+        self._save_config(valid_results, "valid_cv_results.json")
+
+        new_df = pd.DataFrame([])
+
+        for idx in range(folds):
+            df = pd.read_csv(p.join(self.prefix_save_path, f"cv_{idx}_results.csv"))
+
+            if idx == 0:
+                new_df["id"] = df["id"]
+                new_df["prediction"] = df["prediction"]
+            else:
+                new_df["prediction"] += df["prediction"]
+
+        new_df["prediction"] /= folds
+        new_df.to_csv(p.join(self.prefix_save_path, "cv_ensemble_test_results.csv"))

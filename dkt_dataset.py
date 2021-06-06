@@ -141,9 +141,6 @@ class Preprocess:
             df = self.fe_pipeline.transform(self.datas[key], is_train=is_train)
             self.datas[key] = df[self.columns]
 
-    def _get_label_histogram(self):
-        pass
-
     def preprocessing(self, pre_encoders):
         """기계가 처리 가능하도로 변환
         label   : LabelEncoder
