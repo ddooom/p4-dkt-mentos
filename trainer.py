@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import os.path as p
 from datetime import datetime
@@ -11,7 +12,7 @@ from sklearn.metrics import roc_auc_score, accuracy_score
 
 from logger import get_logger
 from dkt_dataset import DKTDataset
-from utils import get_args, get_criterion, get_optimizer, get_scheduler
+from utils import get_args, get_criterion, get_optimizer, get_scheduler, set_seeds
 
 
 class DKTTrainer:
@@ -22,15 +23,22 @@ class DKTTrainer:
 
         self._helper_init()
 
+    def _helper_init(self):
+        self.prefix_save_path = datetime.now().strftime("[%m.%d_%H:%M]")
+        self.prefix_save_path = p.join(self.args.root_dir, f"LOG_{self.prefix_save_path}")
+
+        os.mkdir(self.prefix_save_path)
+
+    def _save_config(self, args, filename="run_config.json"):
+        save_path = p.join(self.prefix_save_path, filename)
+
+        with open(save_path, "w") as writer:
+            writer.write(json.dumps(args, indent=4, ensure_ascii=False) + "\n")
+
+
     def _get_model(self):
         model = self.create_model(self.args).to(self.args.device)
         return model
-
-    def _helper_init(self):
-        self.prefix_save_path = datetime.now().strftime("[%m.%d_%H:%M]")
-        self.prefix_save_path = f"LOG_{self.prefix_save_path}"
-
-        os.mkdir(self.prefix_save_path)
 
     def _update_params(self, loss, model, optimizer):
         loss.backward()
@@ -251,17 +259,19 @@ class DKTTrainer:
         _, test_loader = self._get_loaders(test_data, test_data)
 
         logger.info("\nCHECK BATCH SHAPE")
-        for data_loader, name in zip([train_loader, valid_loader, test_loader], ["TRAIN", "VALID", "TEST"]):
+        for data_loader, name in zip([train_loader, test_loader, valid_loader], ["TRAIN", "TEST", "VALID"]):
             batch = next(iter(data_loader))
-            logger.info(f"\n{name} BATCH SHAPE : {batch.shape}")
+            logger.info(f"\n{name} BATCH TYPE : {type(batch)}")
+            logger.info(f"\n{name} BATCH LEN : {len(batch)}")
+            logger.info(f"\n{name} BATCH DICT VALUE SHAPE : {batch['answerCode'].shape}")
 
         logger.info("\nCHECK MODEL FORWARD")
 
         batch = self._process_batch(batch)
         preds = model(batch)
 
-        logger.info("\nPREDS SHAPE: {preds.shape}")
-        logger.info("\nPREDS EXAMPLES: {preds[0]}")
+        logger.info(f"\nPREDS SHAPE: {preds.shape}")
+        logger.info(f"\nPREDS EXAMPLES: {preds[0]}")
 
         logger.info("\nCHECK METRICS")
 
@@ -270,13 +280,17 @@ class DKTTrainer:
 
         logger.info(f"\nLOSS : {loss.item()}")
 
-        auc, acc = self._get_metric(self._to_numpy(gt[:, -1], self._to_numpy(preds[:, -1])))
+        auc, acc = self._get_metric(self._to_numpy(gt[:, -1]), self._to_numpy(preds[:, -1]))
         logger.info(f"AUC: {auc} ACC: {acc}")
 
     def run(self, train_data, valid_data, test_data, prefix=None):
+        self._save_config(self.args)
+        set_seeds(self.args.seed)
+        
+
         run_file_handler = logging.FileHandler(f"{self.prefix_save_path}/run.log")
         logger = get_logger("run")
-        logger.setLevel(logging.INFO)
+        logger.setLevel(logging.DEBUG)
         logger.addHandler(run_file_handler)
 
         model = self._get_model()
@@ -313,6 +327,10 @@ class DKTTrainer:
                 }
             )
 
+            logger.info(f"TRAIN_LOSS: {train_loss}")
+            logger.info(f"TRAIN AUC: {train_auc} TRAIN ACC: {train_acc}")
+            logger.info(f"VALID AUC: {valid_auc} VALID ACC: {valid_acc}\n")
+
             if valid_auc > best_auc:
                 best_auc = valid_auc
                 self._save_model(model, prefix)
@@ -333,5 +351,3 @@ class DKTTrainer:
 
     def run_cv(self, fold: int, seeds: list):
         assert fold == len(seeds), "fold와 len(seeds)는 같은 수여야 합니다."
-
-        pass

@@ -193,7 +193,7 @@ class Preprocess:
         if pre_encoders["min_max"]:
             mm_cols = pre_encoders["min_max"]
             mm_encoder = MinMaxScaler()
-            self.args.n_linears[k] += mm_cols
+            self.args.n_linears += mm_cols
 
             # Train Fit Transform
             self.datas["train"][mm_cols] = mm_encoder.fit_transform(self.datas["train"][mm_cols])
@@ -211,7 +211,7 @@ class Preprocess:
         if pre_encoders["std"]:
             std_cols = pre_encoders["std"]
             std_encoder = StandardScaler()
-            self.args.n_linears[k] += std_cols
+            self.args.n_linears += std_cols
 
             # Train Fit Transform
             self.datas["train"][std_cols] = std_encoder.fit_transform(self.datas["train"][std_cols])

@@ -20,6 +20,7 @@ def get_args():
     # 데이터
     config["max_seq_len"] = 20
     config["num_workers"] = 1
+    config["data_dir"] = "/opt/ml/input/data/train_dataset"
 
     # 모델
     config["hidden_dim"] = 64
