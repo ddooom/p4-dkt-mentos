@@ -147,15 +147,15 @@ class DKTTrainer:
     def _process_batch(self, batch):
         raise NotImplementedError
 
-    def _hyper(self, checkpoint_dir):
+    def _hyper(self, args, checkpoint_dir=None):
         step = 0
-        checkpoint_path = p.join(checkpoint_dir, "checkpoint")
 
         model = self._get_model()
-        optimizer = get_optimizer(model, self.args)
-        scheduler = get_scheduler(optimizer, self.args)
+        optimizer = get_optimizer(model, args)
+        scheduler = get_scheduler(optimizer, args)
 
         if checkpoint_dir is not None:
+            checkpoint_path = p.join(checkpoint_dir, "checkpoint")
             checkpoint = torch.load(checkpoint_path)
             model.load_state_dict(checkpoint["model"])
             optimizer.load_state_dict(checkpoint["optimizer"])
@@ -177,6 +177,7 @@ class DKTTrainer:
             step += 1
 
             with tune.checkpoint_dir(step=step) as checkpoint_dir:
+                checkpoint_path = p.join(checkpoint_dir, "checkpoint")
                 torch.save(
                     {
                         "model": model.state_dict(),
@@ -190,14 +191,13 @@ class DKTTrainer:
     def hyper(self, args, tune_args, train_data, valid_data):
         self.train_loader, self.valid_loader = self._get_loaders(train_data, valid_data)
 
-        pbt_scheduler = tune.scheduler.PopulationBasedTraining(time_attr="training_iteration", **tune_args)
+        pbt_scheduler = tune.schedulers.PopulationBasedTraining(time_attr="training_iteration", **tune_args)
 
         stopper = CustomStopper(self.args)
 
         analysis = tune.run(
             self._hyper,
             name="pbt_lstm",
-            mode="max",
             stop=stopper,
             max_failures=3,
             num_samples=64,
@@ -228,7 +228,6 @@ class DKTTrainer:
 
             if step % self.args.log_steps == 0:
                 print(f"Training steps: {step} Loss: {str(loss.item())}")
-                wandb.log({"step_train_loss": loss})
 
             preds, targets = preds[:, -1], targets[:, -1]
 

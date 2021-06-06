@@ -9,57 +9,71 @@ from adamp import AdamP
 from madgrad import MADGRAD
 import torch.optim as optim
 from transformers import get_linear_schedule_with_warmup
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from utils.scheduler import CosineAnnealingWarmupRestarts
 from utils.criterion import LabelSmoothingLoss, F1Loss, FocalLoss
 
 
 def get_optimizer(model, args):
-    optimizers_fn = {
-        "sgd": optim.SGD,
-        "adam": optim.Adam,
-        "adamW": optim.AdamW,
-        "adamP": AdamP,  # 기본값을 사용하는 것이 좋다고 한다.
-        "madgrad": MADGRAD,  # lr 0.005, cliping 도움이 됐다.
-    }
+    #  optimizers_fn = {
+    #      "sgd": optim.SGD,
+    #      "adam": optim.Adam,
+    #      "adamW": optim.AdamW,
+    #      "adamP": AdamP,  # 기본값을 사용하는 것이 좋다고 한다.
+    #      "madgrad": MADGRAD,  # lr 0.005, cliping 도움이 됐다.
+    #  }
 
-    #  if args.optimizer == "adam":
-    #      optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=0.01)
-    #  if args.optimizer == "adamW":
-    #      optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    if args.optimizer == "adam":
+        optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=0.01)
+    if args.optimizer == "adamW":
+        optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
 
     # 모든 parameter들의 grad값을 0으로 초기화
-    optimizer = optimizers_fn[args.optimizer](model.parameters(), **args.optimizer_hp)
-    optimizer.zero_grad()
+    #  optimizer = optimizers_fn[args.optimizer](model.parameters(), **args.optimizer_hp)
+    #  optimizer.zero_grad()
 
     return optimizer
 
 
 def get_scheduler(optimizer, args):
-    schedulers_fn = {
-        "cyclic_lr": optim.lr_scheduler.CyclicLR,
-        "cosine_lr": optim.lr_scheduler.CosineAnnealingLR,
-        "cosine_warm_lr": optim.lr_scheduler.CosineAnnealingWarmRestarts,
-        "sgdr": CosineAnnealingWarmupRestarts,
-        "step_lr": optim.lr_scheduler.StepLR,
-        "linear_warmup": get_linear_schedule_with_warmup,
-    }
+    #  schedulers_fn = {
+    #      "cyclic_lr": optim.lr_scheduler.CyclicLR,
+    #      "cosine_lr": optim.lr_scheduler.CosineAnnealingLR,
+    #      "cosine_warm_lr": optim.lr_scheduler.CosineAnnealingWarmRestarts,
+    #      "sgdr": CosineAnnealingWarmupRestarts,
+    #      "step_lr": optim.lr_scheduler.StepLR,
+    #      "linear_warmup": get_linear_schedule_with_warmup,
+    #  }
+    #
+    #  scheduler = schedulers_fn[args.scheduler](optimizer)(**args.scheduler_hp)
+    #  return scheduler
 
-    scheduler = schedulers_fn[args.scheduler](optimizer)(**args.scheduler_hp)
+    if args.scheduler == "plateau":
+        scheduler = ReduceLROnPlateau(optimizer, patience=10, factor=0.5, mode="max", verbose=True)
+    elif args.scheduler == "linear_warmup":
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=args.total_steps
+        )
     return scheduler
 
 
-def get_criterion(args):
-    loss_fns = {
-        "bce_loss": nn.BCELoss,
-        "cross_entropy": nn.CrossEntropyLoss,
-        "f1_loss": F1Loss,
-        "focal_loss": FocalLoss,
-        "smoothing": LabelSmoothingLoss,
-    }
+#  def get_criterion(args):
+#      loss_fns = {
+#          "bce_loss": nn.BCELoss,
+#          "cross_entropy": nn.CrossEntropyLoss,
+#          "f1_loss": F1Loss,
+#          "focal_loss": FocalLoss,
+#          "smoothing": LabelSmoothingLoss,
+#      }
+#
+#      loss_fn = loss_fns[args.loss](**args.loss_hp)
+#      return loss_fn
 
-    loss_fn = loss_fns[args.loss](**args.loss_hp)
-    return loss_fn
+
+def get_criterion(pred, target):
+    loss = nn.BCELoss(reduction="none")
+    return loss(pred, target)
 
 
 def get_args():
