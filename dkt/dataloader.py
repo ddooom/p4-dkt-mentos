@@ -106,6 +106,8 @@ class Preprocess:
         df['time_diff'].fillna(method='bfill', inplace=True)
         # df['time_diff'].fillna(0, inplace=True) -> 성능하락
 
+        df['time_diff'] = df['time_diff'].map(lambda x: 600 if x>600 else x)
+
         ## time median
         answer_df = df[df['answerCode'] == 1]
         time_diff_median = answer_df.groupby(['assessmentItemID'])['time_diff'].agg(['median'])
@@ -140,7 +142,7 @@ class Preprocess:
         # df['time_diff'] = pd.qcut(df['time_diff'], q=20).astype(str)
 
         # pd.cut
-        df['time_diff'] = df['time_diff'].map(lambda x: 600 if x>600 else x)
+        
         thr = 600
         df['time_diff'] = pd.cut(df['time_diff'], bins=thr).astype(str) #.cat.rename_categories(list(range(thr)))
         # df['time_diff'] = pd.cut(df['time_diff'], bins=600).astype(str)
