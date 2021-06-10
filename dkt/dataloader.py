@@ -12,7 +12,7 @@ from sklearn.preprocessing import LabelEncoder
 from torch.nn.utils.rnn import pad_sequence
 import torch
 
-# feature 추가 #1~2 수정
+# feature 추가 #1~3 수정
 
 class Preprocess:
     def __init__(self, args):
@@ -72,21 +72,99 @@ class Preprocess:
             'tail': 'count'
         })
 
+        ## tail prob
         tail_prob_list = prob_groupby['answerCode'].unique().tolist()
 
         df['tail_prob'] = df['tail'].apply(lambda x: tail_prob_list[int(x)-1])
+    
+
+        ## time to sec
+        def convert_time(s):
+            timestamp = time.mktime(datetime.strptime(s, '%Y-%m-%d %H:%M:%S').timetuple())
+            return int(timestamp)
+
+        df['Timestamp'] = df['Timestamp'].apply(convert_time)
+
+        ## find boundary
+        # userID, testId 별 푼 문항의 누적 합
+        df['UserTestCumtestnum'] = df.groupby(['userID','testId'])['answerCode'].cumcount()
+        testId2maxlen = df[['assessmentItemID', 'testId']].drop_duplicates().groupby('testId').size()
+        
+        # test의 문항 수
+        df['TestSize'] = df.testId.map(testId2maxlen)
+        
+        # user가 같은 test를 여러 번 푼 것인지 나타낸 변수 (처음 품 : 0, 두번 품 : 1, 세번 품 : 2)
+        df['Retest'] = df['UserTestCumtestnum'] // df['TestSize']
+
+        # boundary
+        df['boundary'] = [u % t if t != 0 else 0.0 for t, u in zip(df['TestSize'], df['UserTestCumtestnum'])] 
+
+        ## time diff
+        time_diff = df.groupby(['userID', 'head', 'mid'])['Timestamp'].diff()
+        df['time_diff'] = time_diff
+        df.loc[df['boundary'] == 0, 'time_diff'] = np.NaN
+        df['time_diff'].fillna(method='bfill', inplace=True)
+        # df['time_diff'].fillna(0, inplace=True) -> 성능하락
+
+        df['time_diff'] = df['time_diff'].map(lambda x: 600 if x>600 else x)
+
+        ## time median
+        answer_df = df[df['answerCode'] == 1]
+        time_diff_median = answer_df.groupby(['assessmentItemID'])['time_diff'].agg(['median'])
+        df['time_median'] = df['assessmentItemID'].map(time_diff_median['median'])
+
+        ## time distance
+        df['time_dis'] = df['time_diff'] - df['time_median']
+
+        # def cate_diff(x):
+        #     if x > 600:
+        #         return "A"
+        #     if 500 < x <= 600:
+        #         return "B"
+        #     if 400 < x <= 500:
+        #         return "C"
+        #     if 300 < x <= 400:
+        #         return "D"
+        #     if 200 < x <= 300:
+        #         return "E"
+        #     if 100 < x <= 200:
+        #         return "F"
+        #     if 50 < x <= 100:
+        #         return "G"
+        #     if x <= 50:
+        #         return "H"
+
+        # df['time_diff'] = df['time_diff'].map(lambda x: cate_diff(x))
+
+        # pd.qcut
+        # df['time_diff'] = pd.qcut(df['time_diff'], q=23).cat.rename_categories(list(range(23))).astype(str)
+        # df['time_diff'] = pd.qcut(df['time_diff'], q=20).cat.rename_categories(list('abcdefghijklnmopqrst')).astype(str)
+        # df['time_diff'] = pd.qcut(df['time_diff'], q=20).astype(str)
+
+        # pd.cut
+        
+        thr = 600
+        df['time_diff'] = pd.cut(df['time_diff'], bins=thr).astype(str) #.cat.rename_categories(list(range(thr)))
+        # df['time_diff'] = pd.cut(df['time_diff'], bins=600).astype(str)
 
         #2 self.args.features의 순서와 trainer #1의 순서를 맞춰주자!
-        # correct, question, test, tag, tail_prob, mask = batch
+        # correct, question, test, tag, time_diff, head, mid, tail, mid_tail, time_dis, mask = batch
 
         self.args.cate_cols.extend([
             'assessmentItemID', 
             'testId', 
-            'KnowledgeTag'
+            'KnowledgeTag',
+            'time_diff',
+            'head',
+            'mid',
+            'tail',
+            'mid_tail'
             ])
 
         self.args.cont_cols.extend([
-            'tail_prob'
+            # 'time_diff',
+            # 'time_median',
+            'time_dis',
             ])
 
         self.args.features.extend(
@@ -121,13 +199,8 @@ class Preprocess:
             df[col]= df[col].astype(str)
             test = le.transform(df[col])
             df[col] = test
-            
 
-        def convert_time(s):
-            timestamp = time.mktime(datetime.strptime(s, '%Y-%m-%d %H:%M:%S').timetuple())
-            return int(timestamp)
-
-        df['Timestamp'] = df['Timestamp'].apply(convert_time)
+        # df.to_csv('peprocess_test.csv')
 
         return df
 
@@ -137,7 +210,7 @@ class Preprocess:
         df = pd.read_csv(csv_file_path)
         df = self.__feature_engineering(df)
         df = self.__preprocessing(df, is_train)
-
+        
         cols = df.columns.tolist()
         for col in cols:
             if col in self.args.cont_cols:
@@ -148,13 +221,19 @@ class Preprocess:
         
         df = df.sort_values(by=['userID','Timestamp'], axis=0)
 
-        feature_columns = [
-            'answerCode',
-            'assessmentItemID',
-            'testId',
-            'KnowledgeTag',
-            # 'tail',
-        ]
+        #3 시퀀스에 사용할 feature 등록
+        feature_columns = self.args.features
+        # [
+        #     'answerCode',
+        #     'assessmentItemID',
+        #     'testId',
+        #     'KnowledgeTag',
+        #     'time_diff',
+        #     'head',
+        #     'mid',
+        #     'tail',
+        #     'mid_tail',
+        # ]
         
         def get_values(cols, r):
             result = []

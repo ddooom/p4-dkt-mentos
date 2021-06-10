@@ -8,7 +8,7 @@ from .optimizer import get_optimizer
 from .scheduler import get_scheduler
 from .criterion import get_criterion
 from .metric import get_metric
-from .model import LSTM, LSTMATTN, Bert, Saint
+from .model import LSTM, LSTMATTN, Bert, Saint, TfixupBert
 
 import wandb
 
@@ -170,7 +170,6 @@ def inference(args, test_data):
 
         preds = model(inputs)
         
-
         # predictions
         preds = preds[:,-1]
         
@@ -185,13 +184,12 @@ def inference(args, test_data):
     write_path = os.path.join(args.output_dir, f"{args.model_name[:-3]}.csv")
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)    
+        
     with open(write_path, 'w', encoding='utf8') as w:
         print("writing prediction : {}".format(write_path))
         w.write("id,prediction\n")
         for id, p in enumerate(total_preds):
             w.write('{},{}\n'.format(id,p))
-
-
 
 
 def get_model(args):
@@ -202,7 +200,7 @@ def get_model(args):
     if args.model == 'lstmattn': model = LSTMATTN(args)
     if args.model == 'bert': model = Bert(args)
     if args.model == 'saint': model = Saint(args)
-    
+    if args.model == 'tfbert': model = TfixupBert(args)
 
     model.to(args.device)
 
@@ -213,7 +211,7 @@ def get_model(args):
 def process_batch(batch, args):
 
     #1 dataloader #2와 순서를 맞춰주자
-    correct, question, test, tag, mask = batch
+    correct, question, test, tag, time_diff, head, mid, tail, mid_tail, time_dis, mask = batch
     
     
     # change to float
@@ -235,7 +233,14 @@ def process_batch(batch, args):
     tag = ((tag + 1) * mask).to(torch.int64)
 
     #2 추가 feature
-    # tail_prob = ((tail_prob + 1) * mask).type(torch.FloatTensor)
+    # time_median = ((time_median + 1) * mask).type(torch.FloatTensor)
+    time_dis = ((time_dis + 1) * mask).type(torch.FloatTensor)
+
+    time_diff = ((time_diff + 1) * mask).to(torch.int64)
+    head = ((head + 1) * mask).to(torch.int64)
+    mid = ((mid + 1) * mask).to(torch.int64)
+    tail = ((tail + 1) * mask).to(torch.int64)
+    mid_tail = ((mid_tail + 1) * mask).to(torch.int64)
 
     # gather index
     # 마지막 sequence만 사용하기 위한 index
@@ -250,7 +255,14 @@ def process_batch(batch, args):
     tag = tag.to(args.device)
     correct = correct.to(args.device)
 
-    # tail_prob = tail_prob.to(args.device)
+    # time_median = time_median.to(args.device)
+    time_diff = time_diff.to(args.device)
+    head = head.to(args.device)
+    mid = mid.to(args.device)
+    tail = tail.to(args.device)
+    mid_tail = mid_tail.to(args.device)
+
+    time_dis = time_dis.to(args.device)
 
     mask = mask.to(args.device)
 
@@ -258,8 +270,7 @@ def process_batch(batch, args):
     gather_index = gather_index.to(args.device)
 
     #4 
-    # tail_prob
-    return (test, question, tag,
+    return (test, question, tag, time_diff, head, mid, tail, mid_tail, time_dis,
             mask, interaction, gather_index, correct)
 
 

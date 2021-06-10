@@ -203,11 +203,16 @@ class Bert(nn.Module):
         self.embedding_test = nn.Embedding(self.args.n_cols['testId']+1, self.args.hidden_dim)
         self.embedding_question = nn.Embedding(self.args.n_cols['assessmentItemID']+1, self.args.hidden_dim)
         self.embedding_tag = nn.Embedding(self.args.n_cols['KnowledgeTag']+1, self.args.hidden_dim)
+        self.embedding_time_diff = nn.Embedding(self.args.n_cols['time_diff']+1, self.args.hidden_dim)
+        self.embedding_head = nn.Embedding(self.args.n_cols['head']+1, self.args.hidden_dim)
+        self.embedding_mid = nn.Embedding(self.args.n_cols['mid']+1, self.args.hidden_dim)
+        self.embedding_tail = nn.Embedding(self.args.n_cols['tail']+1, self.args.hidden_dim)
+        self.embedding_mid_tail = nn.Embedding(self.args.n_cols['mid_tail']+1, self.args.hidden_dim)
 
 
         # embedding projection
         self.cate_proj = nn.Sequential(
-            nn.Linear((self.args.hidden_dim) * (cate_size-2), self.args.hidden_dim),
+            nn.Linear((self.args.hidden_dim) * (cate_size), self.args.hidden_dim),
             nn.LayerNorm(self.args.hidden_dim),
         )
 
@@ -267,7 +272,7 @@ class Bert(nn.Module):
     def forward(self, inputs):
         #2 process_batch의 return 
         # tail_prob
-        test, question, tag, mask, interaction, gather_index, correct = inputs
+        test, question, tag, time_diff, head, mid, tail, mid_tail, time_dis, mask, interaction, gather_index, correct = inputs
         batch_size = interaction.size(0)
 
         #3 신나는 embedding
@@ -275,21 +280,33 @@ class Bert(nn.Module):
         embed_test = self.embedding_test(test)
         embed_question = self.embedding_question(question)
         embed_tag = self.embedding_tag(tag)
+        embed_time_diff = self.embedding_time_diff(time_diff)
+        embed_head = self.embedding_head(head)
+        embed_mid = self.embedding_mid(mid)
+        embed_tail = self.embedding_tail(tail)
+        embed_mid_tail = self.embedding_mid_tail(mid_tail)
 
         #4
         # (batch_size, max_seq_len, hidden_dim * n) : (64, 20, 64 * n) 
         cate_embed = torch.cat([
-                    embed_interaction, 
+                    embed_interaction,
                     embed_question,
-                    # embed_tag,
-                    # embed_test,
+                    embed_time_diff,
+                    embed_tag,
+                    embed_head,
+                    embed_mid,
+                    embed_tail,
+                    embed_test,
+                    embed_mid_tail,
+                     
                 ], 2)
 
         #5
         # (batch_size, max_seq_len * n) : (64, 20 * n) 
         if self.args.numeric:
             cont_cat = torch.cat([
-                    # tail_prob,            
+                    # time_diff,  
+                    time_dis,     
             ], 1)
             
             # (batch_size, max_seq_len, n) : (64, 20, n) 
