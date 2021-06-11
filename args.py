@@ -23,7 +23,7 @@ def parse_args(mode='train'):
     parser.add_argument('--output_name', default='output.csv', type=str)
     
     parser.add_argument('--max_seq_len', default=20, type=int, help='max sequence length')
-    parser.add_argument('--num_workers', default=8, type=int, help='number of workers')
+    parser.add_argument('--num_workers', default=0, type=int, help='number of workers')
 
     # 모델
     parser.add_argument('--hidden_dim', default=256, type=int, help='hidden dimension size')
@@ -32,11 +32,11 @@ def parse_args(mode='train'):
     parser.add_argument('--drop_out', default=0.2, type=float, help='drop out rate')
     
     # 훈련
-    parser.add_argument('--n_epochs', default=20, type=int, help='number of epochs')
+    parser.add_argument('--n_epochs', default=80, type=int, help='number of epochs')
     parser.add_argument('--batch_size', default=64, type=int, help='batch size')
     parser.add_argument('--lr', default=1e-4, type=float, help='learning rate')
     parser.add_argument('--clip_grad', default=10, type=int, help='clip grad')
-    parser.add_argument('--patience', default=10, type=int, help='for early stopping')
+    parser.add_argument('--patience', default=20, type=int, help='for early stopping')
     
 
     parser.add_argument('--log_steps', default=50, type=int, help='print log per n steps')

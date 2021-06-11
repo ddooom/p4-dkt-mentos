@@ -1,0 +1,1 @@
+python inference.py --model saint --data_id userID --model_name model_13.pt --output_name saint_fe.csv

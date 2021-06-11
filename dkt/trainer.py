@@ -9,7 +9,7 @@ from .optimizer import get_optimizer, get_lr
 from .scheduler import get_scheduler
 from .criterion import get_criterion
 from .metric import get_metric
-from .model import LSTM, LSTMATTN, Bert, Transformer, Saint
+from .model import LSTM, LSTMATTN, Bert, Transformer, Saint, LastQuery
 
 import wandb
 
@@ -27,10 +27,11 @@ def run(args, train_data, valid_data):
     if len(model_number) == 0:
         save_name = "model_0.pt"
     else:
-        model_number = [int(m.split(".")[0][-1]) for m in model_number]
+        # model_number = [int(m.split(".")[0][-1]) for m in model_number]
+        model_number = [int(m.split(".")[0].split("_")[1]) for m in model_number]
         model_number.sort()
         save_name = "model_" + str(model_number[-1] + 1) + ".pt"
-
+    print("[saved model path] ", args.model, "/", save_name)
     
     # only when using warmup scheduler
     args.total_steps = int(len(train_loader.dataset) / args.batch_size) * (args.n_epochs)
@@ -226,6 +227,7 @@ def get_model(args):
     if args.model == 'bert': model = Bert(args)
     if args.model == 'transformer' : model = Transformer(args)
     if args.model == 'saint' : model = Saint(args)
+    if args.model == 'query' : model = LastQuery(args)
     
 
     model.to(args.device)
@@ -236,7 +238,8 @@ def get_model(args):
 # 배치 전처리
 def process_batch(batch, args):
 
-    test, question, tag, correct, mask = batch
+    # test, question, tag, correct, mask = batch
+    correct, question, test, tag, paperid, head, mid, tail, time, mask = batch
     
     
     # change to float
@@ -264,6 +267,13 @@ def process_batch(batch, args):
     question = ((question + 1) * mask).to(torch.int64)
     tag = ((tag + 1) * mask).to(torch.int64)
 
+    # 추가된 feature
+    paperid = ((paperid + 1) * mask).to(torch.int64)
+    head = ((head + 1) * mask).to(torch.int64)
+    mid = ((mid + 1) * mask).to(torch.int64)
+    tail = ((tail + 1) * mask).to(torch.int64)
+    time = ((time + 1) * mask).to(torch.int64)
+
     # gather index
     # 마지막 sequence만 사용하기 위한 index
     gather_index = torch.tensor(np.count_nonzero(mask, axis=1))
@@ -274,8 +284,6 @@ def process_batch(batch, args):
 
     test = test.to(args.device)
     question = question.to(args.device)
-
-
     tag = tag.to(args.device)
     correct = correct.to(args.device)
     mask = mask.to(args.device)
@@ -283,9 +291,15 @@ def process_batch(batch, args):
     interaction = interaction.to(args.device)
     gather_index = gather_index.to(args.device)
 
+    paperid = paperid.to(args.device)
+    head = head.to(args.device)
+    mid = mid.to(args.device)
+    tail = tail.to(args.device)
+    time = time.to(args.device)
+
     return (test, question,
             tag, correct, mask,
-            interaction, gather_index)
+            interaction, paperid, head, mid, tail, time, gather_index)
 
 
 # loss계산하고 parameter update!
