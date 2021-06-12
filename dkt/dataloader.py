@@ -111,17 +111,29 @@ class Preprocess:
                 
                 new_user.append(new_id)
                 before = userid[i]
-
         
         df['newID'] = new_user
-        
+
+        # assessmentItemID split
         df['paperID'] = df.assessmentItemID.apply(lambda x: x[1:7])
         df['head'] = df.assessmentItemID.apply(lambda x: x[1:4])
         df['mid'] = df.assessmentItemID.apply(lambda x: x[4:7])
         df['tail'] = df.assessmentItemID.apply(lambda x: x[7:])
 
+        # Tail answer score
+        def percentile(s):
+            return np.sum(s) / len(s)
+
+        prob_groupby = df.groupby('tail').agg({
+            'answerCode': percentile,
+        })
+
+        tail_prob_list = prob_groupby['answerCode'].unique().tolist()
+        df['tail_prob'] = df['tail'].apply(lambda x: tail_prob_list[int(x)-1])
+        
+
         self.args.cate_cols.extend(['paperID', 'head', 'mid', 'tail'])
-        self.args.cont_cols.append('Timestamp')
+        self.args.cont_cols.extend(['Timestamp', 'tail_prob'])
 
         self.args.features.extend(
             ['answerCode'] + 

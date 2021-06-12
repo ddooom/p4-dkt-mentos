@@ -452,7 +452,7 @@ class Saint(nn.Module):
 
     def forward(self, input):
         # test, question, tag, _, mask, interaction, _ = input
-        test, question, tag, correct, mask, interaction, paperid, head, mid, tail, time, _ = input
+        test, question, tag, correct, mask, interaction, paperid, head, mid, tail, tail_prob, time, _ = input
 
         
         # def min_max(x, strs):
@@ -493,9 +493,10 @@ class Saint(nn.Module):
 
         if self.args.numeric:
             cont_cat = torch.cat([
-                time
+                time,
+                tail_prob
             ], 1)
-            cont_cat = cont_cat.float()  # Long to Float
+            # cont_cat = cont_cat.float()  # Long to Float
             cont_cat = cont_cat.view(batch_size, self.args.max_seq_len, -1)
             cont_cat = self.cont_bn(cont_cat.view(-1, cont_cat.size(-1)))
             cont_cat = cont_cat.view(batch_size, self.args.max_seq_len, -1)
@@ -538,10 +539,11 @@ class Saint(nn.Module):
 
         if self.args.numeric:
             cont_cat = torch.cat([
-                time
+                time,
+                tail_prob
             ], 1)
 
-            cont_cat = cont_cat.float()
+            # cont_cat = cont_cat.float()
 
             cont_cat = cont_cat.view(batch_size, self.args.max_seq_len, -1)
             cont_cat = self.cont_bn(cont_cat.view(-1, cont_cat.size(-1)))
