@@ -54,6 +54,11 @@ def parse_args(mode='train'):
     parser.add_argument('--max_lr', type=float, default=1e-4)
     parser.add_argument('--min_lr', type=float, default=1e-5)
     parser.add_argument('--data_id', type=str, default='userID')
+    parser.add_argument('--split_id', type=str, default='testid')
+
+    feature_parser = parser.add_mutually_exclusive_group(required=False)  # argument가 꼭 필요한지 아닌지, False면 실행할 때 아래 arugment를 꼭 안써줘도 된다
+    feature_parser.add_argument('--numeric', dest='numeric', action='store_true')
+    parser.set_defaults(numeric=False)
     
     args = parser.parse_args()
 

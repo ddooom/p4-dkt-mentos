@@ -364,17 +364,65 @@ class Saint(nn.Module):
         self.embedding_mid = nn.Embedding(self.args.n_cols['mid'] + 1, self.hidden_dim)
         self.embedding_tail = nn.Embedding(self.args.n_cols['tail'] + 1, self.hidden_dim)
 
+        self.enc_comb_proj = None
+
+        if self.args.numeric:
+            self.cate_enc_proj = nn.Sequential(
+                nn.Linear(self.args.hidden_dim * cate_size, self.hidden_dim),
+                nn.LayerNorm(self.args.hidden_dim)
+            )        
+
+            if self.args.numeric:
+                self.cont_bn = nn.BatchNorm1d(cont_size)
+                self.cont_proj = nn.Sequential(
+                    nn.Linear(cont_size, self.args.hidden_dim),
+                    nn.LayerNorm(self.args.hidden_dim)
+                )
+
+                self.enc_comb_proj = nn.Sequential(
+                    nn.ReLU(),
+                    nn.Linear(self.args.hidden_dim * 2, self.args.hidden_dim),
+                    nn.LayerNorm(self.args.hidden_dim)
+                )
+            else:
+                self.enc_comb_proj = nn.Sequential(
+                    nn.ReLU(),
+                    nn.Linear(self.args.hidden_dim, self.args.hidden_dim),
+                    nn.LayerNorm(self.args.hidden_dim)
+                )
+
         # self.embedding_time = nn.Embedding(self.args.n_cols['Timestamp'] + 1, self.hidden_dim)
         
         # encoder combination projection
-        self.enc_comb_proj = nn.Linear(self.hidden_dim * (cate_size + cont_size -1), self.hidden_dim)
+        # self.enc_comb_proj = nn.Linear(self.hidden_dim * (cate_size + cont_size -1), self.hidden_dim)
 
         # DECODER embedding
         # interaction은 현재 correct으로 구성되어있다. correct(1, 2) + padding(0)
         self.embedding_interaction = nn.Embedding(3, self.hidden_dim)
+
+        self.dec_comb_proj = None
+
+        if self.args.numeric:
+            self.cont_bn = nn.BatchNorm1d(cont_size)
+            self.cate_dec_proj = nn.Sequential(
+                nn.Linear(self.args.hidden_dim * (cate_size + 1), self.hidden_dim),
+                nn.LayerNorm(self.args.hidden_dim)
+            )
+
+            self.dec_comb_proj = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(self.args.hidden_dim * 2, self.args.hidden_dim),
+                nn.LayerNorm(self.args.hidden_dim)
+            )
+        else:
+            self.dec_comb_proj = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(self.args.hidden_dim, self.args.hidden_dim),
+                nn.LayerNorm(self.args.hidden_dim)
+            )
         
         # decoder combination projection
-        self.dec_comb_proj = nn.Linear(self.hidden_dim * (cate_size + cont_size), self.hidden_dim)
+        # self.dec_comb_proj = nn.Linear(self.hidden_dim * (cate_size + cont_size), self.hidden_dim)
 
         # Positional encoding
         self.pos_encoder = PositionalEncoding(self.hidden_dim, self.dropout, self.args.max_seq_len)
@@ -434,13 +482,31 @@ class Saint(nn.Module):
         embed_tail = self.embedding_tail(tail)
         # embed_time = self.embedding_time(time)
 
-        embed_enc = torch.cat([embed_test,
+        cate_cat = torch.cat([embed_test,
                                embed_question,
                                embed_tag,
                                embed_paper,
                                embed_head,
                                embed_mid,
                                embed_tail], 2)
+        # cont_cat = None
+
+        if self.args.numeric:
+            cont_cat = torch.cat([
+                time
+            ], 1)
+            cont_cat = cont_cat.float()  # Long to Float
+            cont_cat = cont_cat.view(batch_size, self.args.max_seq_len, -1)
+            cont_cat = self.cont_bn(cont_cat.view(-1, cont_cat.size(-1)))
+            cont_cat = cont_cat.view(batch_size, self.args.max_seq_len, -1)
+        
+        cate_enc = self.cate_enc_proj(cate_cat)
+
+        if self.args.numeric:
+            cont_enc = self.cont_proj(cont_cat)
+            embed_enc = torch.cat([cate_enc, cont_enc], 2)
+        else:
+            embed_enc = cate_enc
 
         embed_enc = self.enc_comb_proj(embed_enc)
         
@@ -461,7 +527,7 @@ class Saint(nn.Module):
 
         embed_interaction = self.embedding_interaction(interaction)
 
-        embed_dec = torch.cat([embed_test,
+        cate_cat = torch.cat([embed_test,
                                embed_question,
                                embed_tag,
                                embed_paper,
@@ -469,6 +535,25 @@ class Saint(nn.Module):
                                embed_mid,
                                embed_tail,
                                embed_interaction], 2)
+
+        if self.args.numeric:
+            cont_cat = torch.cat([
+                time
+            ], 1)
+
+            cont_cat = cont_cat.float()
+
+            cont_cat = cont_cat.view(batch_size, self.args.max_seq_len, -1)
+            cont_cat = self.cont_bn(cont_cat.view(-1, cont_cat.size(-1)))
+            cont_cat = cont_cat.view(batch_size, self.args.max_seq_len, -1)
+        
+        cate_dec = self.cate_dec_proj(cate_cat)
+
+        if self.args.numeric:
+            cont_dec = self.cont_proj(cont_cat)
+            embed_dec = torch.cat([cate_dec, cont_dec], 2)
+        else:
+            embed_dec = cate_dec
 
         embed_dec = self.dec_comb_proj(embed_dec)
 

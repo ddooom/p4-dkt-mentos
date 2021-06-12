@@ -76,29 +76,42 @@ class Preprocess:
         return df
 
     def __feature_engineering(self, df):
-        # user split by seq_len
-        seq_len = self.args.max_seq_len
+        userid = df.userID.tolist()
+        
         new_id = 0
         before = 0
-        count = 0
         new_user = []
 
-        userid = df.userID.tolist()
-        # userid.reverse()
+        # split userID by seq_len
+        if self.args.split_id == "seq_len":
+            seq_len = self.args.max_seq_len
+            count = 0
 
-        for u in userid:
-            if (count == seq_len) or (u != before):
-                new_id += 1
-                count = 0
+            for u in userid:
+                if (count == seq_len) or (u != before):
+                    new_id += 1
+                    count = 0
+                    
+                new_user.append(new_id)
+                count += 1
                 
-            new_user.append(new_id)
-            count += 1
-            
-            before = u
+                before = u
         
-        # new_user.reverse()
-        # max_user = max(new_user)
-        # new_user = [max_user - n for n in new_user]
+        # split userID by testId threshold
+        elif self.args.split_id == "testid":
+            testid = df.testId.tolist()
+            testid_set = set()
+            testid_thr = 3
+
+            for i in range(len(userid)):
+                testid_set.add(testid[i])
+                if (len(testid_set) > testid_thr) or (userid[i] != before):
+                    new_id += 1
+                    testid_set = set()
+                
+                new_user.append(new_id)
+                before = userid[i]
+
         
         df['newID'] = new_user
         
