@@ -1,1 +1,1 @@
-python train.py --model saint --data_id newID --split_id testid --wandb_name saint_test_split --numeric
+python train.py --model saint --data_id newID --split_id test_id --wandb_name saint_testsplitprob --numeric --num_workers 4

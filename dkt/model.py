@@ -352,7 +352,7 @@ class Saint(nn.Module):
         self.dropout = args.drop_out
         
         cate_size = len(self.args.cate_cols)
-        cont_size = len(self.args.cont_cols)
+        cont_size = len(self.args.cont_cols) - 1
 
         ### Embedding
         # ENCODER embedding
@@ -364,32 +364,33 @@ class Saint(nn.Module):
         self.embedding_mid = nn.Embedding(self.args.n_cols['mid'] + 1, self.hidden_dim)
         self.embedding_tail = nn.Embedding(self.args.n_cols['tail'] + 1, self.hidden_dim)
 
-        self.enc_comb_proj = None
+        # test
+        # self.embedding_tailprob = nn.Embedding(self.args.n_cols['tail_prob'] + 1, self.hidden_dim)
+
+        
+        self.cate_enc_proj = nn.Sequential(
+            nn.Linear(self.args.hidden_dim * cate_size, self.hidden_dim),
+            nn.LayerNorm(self.args.hidden_dim)
+        )        
 
         if self.args.numeric:
-            self.cate_enc_proj = nn.Sequential(
-                nn.Linear(self.args.hidden_dim * cate_size, self.hidden_dim),
+            self.cont_bn = nn.BatchNorm1d(cont_size)
+            self.cont_enc_proj = nn.Sequential(
+                nn.Linear(cont_size, self.args.hidden_dim),
                 nn.LayerNorm(self.args.hidden_dim)
-            )        
+            )
 
-            if self.args.numeric:
-                self.cont_bn = nn.BatchNorm1d(cont_size)
-                self.cont_proj = nn.Sequential(
-                    nn.Linear(cont_size, self.args.hidden_dim),
-                    nn.LayerNorm(self.args.hidden_dim)
-                )
-
-                self.enc_comb_proj = nn.Sequential(
-                    nn.ReLU(),
-                    nn.Linear(self.args.hidden_dim * 2, self.args.hidden_dim),
-                    nn.LayerNorm(self.args.hidden_dim)
-                )
-            else:
-                self.enc_comb_proj = nn.Sequential(
-                    nn.ReLU(),
-                    nn.Linear(self.args.hidden_dim, self.args.hidden_dim),
-                    nn.LayerNorm(self.args.hidden_dim)
-                )
+            self.enc_comb_proj = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(self.args.hidden_dim * 2, self.args.hidden_dim),
+                nn.LayerNorm(self.args.hidden_dim)
+            )
+        else:
+            self.enc_comb_proj = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(self.args.hidden_dim, self.args.hidden_dim),
+                nn.LayerNorm(self.args.hidden_dim)
+            )
 
         # self.embedding_time = nn.Embedding(self.args.n_cols['Timestamp'] + 1, self.hidden_dim)
         
@@ -400,14 +401,17 @@ class Saint(nn.Module):
         # interaction은 현재 correct으로 구성되어있다. correct(1, 2) + padding(0)
         self.embedding_interaction = nn.Embedding(3, self.hidden_dim)
 
-        self.dec_comb_proj = None
-
-        if self.args.numeric:
-            self.cont_bn = nn.BatchNorm1d(cont_size)
-            self.cate_dec_proj = nn.Sequential(
+        self.cate_dec_proj = nn.Sequential(
                 nn.Linear(self.args.hidden_dim * (cate_size + 1), self.hidden_dim),
                 nn.LayerNorm(self.args.hidden_dim)
             )
+
+        if self.args.numeric:
+            self.cont_bn = nn.BatchNorm1d(cont_size)
+            self.cont_dec_proj = nn.Sequential(
+                nn.Linear(cont_size, self.args.hidden_dim),
+                nn.LayerNorm(self.args.hidden_dim)
+            ) 
 
             self.dec_comb_proj = nn.Sequential(
                 nn.ReLU(),
@@ -452,7 +456,7 @@ class Saint(nn.Module):
 
     def forward(self, input):
         # test, question, tag, _, mask, interaction, _ = input
-        test, question, tag, correct, mask, interaction, paperid, head, mid, tail, tail_prob, time, _ = input
+        test, question, tag, correct, mask, interaction, paperid, head, mid, tail, tail_prob, test_split_prob, time_diff,  _ = input
 
         
         # def min_max(x, strs):
@@ -480,7 +484,7 @@ class Saint(nn.Module):
         embed_head = self.embedding_head(head)
         embed_mid = self.embedding_mid(mid)
         embed_tail = self.embedding_tail(tail)
-        # embed_time = self.embedding_time(time)
+        # embed_tailprob = self.embedding_tailprob(tail_prob)
 
         cate_cat = torch.cat([embed_test,
                                embed_question,
@@ -493,8 +497,9 @@ class Saint(nn.Module):
 
         if self.args.numeric:
             cont_cat = torch.cat([
-                time,
-                tail_prob
+                # tail_prob,
+                test_split_prob,
+                time_diff
             ], 1)
             # cont_cat = cont_cat.float()  # Long to Float
             cont_cat = cont_cat.view(batch_size, self.args.max_seq_len, -1)
@@ -504,7 +509,7 @@ class Saint(nn.Module):
         cate_enc = self.cate_enc_proj(cate_cat)
 
         if self.args.numeric:
-            cont_enc = self.cont_proj(cont_cat)
+            cont_enc = self.cont_enc_proj(cont_cat)
             embed_enc = torch.cat([cate_enc, cont_enc], 2)
         else:
             embed_enc = cate_enc
@@ -523,6 +528,7 @@ class Saint(nn.Module):
         embed_head = self.embedding_head(head)
         embed_mid = self.embedding_mid(mid)
         embed_tail = self.embedding_tail(tail)
+        # embed_tailprob = self.embedding_tailprob(tail_prob)
         # embed_time = self.embedding_time(time)
 
 
@@ -539,8 +545,9 @@ class Saint(nn.Module):
 
         if self.args.numeric:
             cont_cat = torch.cat([
-                time,
-                tail_prob
+                # tail_prob,
+                test_split_prob,
+                time_diff
             ], 1)
 
             # cont_cat = cont_cat.float()
@@ -552,7 +559,7 @@ class Saint(nn.Module):
         cate_dec = self.cate_dec_proj(cate_cat)
 
         if self.args.numeric:
-            cont_dec = self.cont_proj(cont_cat)
+            cont_dec = self.cont_dec_proj(cont_cat)
             embed_dec = torch.cat([cate_dec, cont_dec], 2)
         else:
             embed_dec = cate_dec

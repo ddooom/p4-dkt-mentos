@@ -67,11 +67,11 @@ class Preprocess:
             test = le.transform(df[col])
             df[col] = test
         
-        def convert_time(s):
-            timestamp = time.mktime(datetime.strptime(s, '%Y-%m-%d %H:%M:%S').timetuple())
-            return int(timestamp)
+        # def convert_time(s):
+        #     timestamp = time.mktime(datetime.strptime(s, '%Y-%m-%d %H:%M:%S').timetuple())
+        #     return int(timestamp)
 
-        df['Timestamp'] = df['Timestamp'].apply(convert_time)
+        # df['Timestamp'] = df['Timestamp'].apply(convert_time)
         
         return df
 
@@ -96,9 +96,9 @@ class Preprocess:
                 count += 1
                 
                 before = u
-        
+
         # split userID by testId threshold
-        elif self.args.split_id == "testid":
+        elif self.args.split_id == "test_id":
             testid = df.testId.tolist()
             testid_set = set()
             testid_thr = 3
@@ -130,16 +130,59 @@ class Preprocess:
 
         tail_prob_list = prob_groupby['answerCode'].unique().tolist()
         df['tail_prob'] = df['tail'].apply(lambda x: tail_prob_list[int(x)-1])
+
+        # newID (test_split_id) answer score
+        prob_groupby = df.groupby('newID').agg({
+            'answerCode': percentile,
+        })
+
+        test_split_prob_list = prob_groupby['answerCode'].tolist()
+        df['test_split_prob'] = df['newID'].apply(lambda x: test_split_prob_list[int(x)])
         
+        # time diff
+        def convert_time(s):
+            timestamp = time.mktime(datetime.strptime(s, '%Y-%m-%d %H:%M:%S').timetuple())
+            return int(timestamp)
+
+        df['Timestamp'] = df['Timestamp'].apply(convert_time)
+
+        time_diff = df.groupby(['userID', 'head', 'mid'])['Timestamp'].diff()
+        ## find boundary
+        # userID, testId 별 푼 문항의 누적 합
+        df['UserTestCumtestnum'] = df.groupby(['userID','testId'])['answerCode'].cumcount()
+        testId2maxlen = df[['assessmentItemID', 'testId']].drop_duplicates().groupby('testId').size()
+
+        # test의 문항 수
+        df['TestSize'] = df.testId.map(testId2maxlen)
+
+        # user가 같은 test를 여러 번 푼 것인지 나타낸 변수 (처음 품 : 0, 두번 품 : 1, 세번 품 : 2)
+        df['Retest'] = df['UserTestCumtestnum'] // df['TestSize']
+
+        # boundary
+        df['boundary'] = [u % t if t != 0 else 0.0 for t, u in zip(df['TestSize'], df['UserTestCumtestnum'])]
+
+        df['time_diff'] = time_diff
+
+        df['time_diff'].fillna(method='bfill', inplace=True)
+        # df['time_diff'].fillna(0, inplace=True) -> 성능하락
+
+        df['time_diff'] =df['time_diff'].map(lambda x: 600 if x>600 else x)
+
 
         self.args.cate_cols.extend(['paperID', 'head', 'mid', 'tail'])
-        self.args.cont_cols.extend(['Timestamp', 'tail_prob'])
+        self.args.cont_cols.extend(['tail_prob', 'test_split_prob', 'time_diff'])
 
-        self.args.features.extend(
-            ['answerCode'] + 
-            self.args.cate_cols + 
-            self.args.cont_cols
-            )
+        if self.args.numeric:
+            self.args.features.extend(
+                    ['answerCode'] + 
+                    self.args.cate_cols + 
+                    self.args.cont_cols
+                    )
+        else:
+            self.args.features.extend(
+                    ['answerCode'] + 
+                    self.args.cate_cols
+                    )
 
         return df
 

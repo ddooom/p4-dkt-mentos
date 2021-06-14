@@ -1,1 +1,1 @@
-python inference.py --model saint --data_id userID --model_name model_13.pt --output_name saint_fe.csv
+python inference.py --model saint --data_id userID --model_name model_24.pt --output_name saint_timediff_mini.csv --numeric --num_workers 4

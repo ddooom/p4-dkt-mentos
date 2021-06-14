@@ -239,7 +239,7 @@ def get_model(args):
 def process_batch(batch, args):
 
     # test, question, tag, correct, mask = batch
-    correct, question, test, tag, paperid, head, mid, tail, time, tail_prob, mask = batch
+    correct, question, test, tag, paperid, head, mid, tail, tail_prob, test_split_prob, time_diff, mask = batch
     
     
     # change to float
@@ -272,11 +272,14 @@ def process_batch(batch, args):
     head = ((head + 1) * mask).to(torch.int64)
     mid = ((mid + 1) * mask).to(torch.int64)
     tail = ((tail + 1) * mask).to(torch.int64)
+    # tail_prob = ((tail_prob + 1) * mask).to(torch.int64)
+    # time = ((time + 1) * mask).to(torch.int64)
 
     # numeric feature -> float
-    time = ((time + 1) * mask).to(torch.float32)
     tail_prob = ((tail_prob + 1) * mask).to(torch.float32)
-    # time = ((time + 1) * mask).to(torch.int64)
+    test_split_prob = ((test_split_prob + 1) * mask).to(torch.float32)
+    time_diff = ((time_diff + 1) * mask).to(torch.float32)
+    # time = ((time + 1) * mask).to(torch.float32)
 
     # gather index
     # 마지막 sequence만 사용하기 위한 index
@@ -299,12 +302,14 @@ def process_batch(batch, args):
     head = head.to(args.device)
     mid = mid.to(args.device)
     tail = tail.to(args.device)
-    time = time.to(args.device)
     tail_prob = tail_prob.to(args.device)
+    test_split_prob = test_split_prob.to(args.device)
+    time_diff = time_diff.to(args.device)
+    # time = time.to(args.device)
 
     return (test, question,
             tag, correct, mask,
-            interaction, paperid, head, mid, tail, time, tail_prob, gather_index)
+            interaction, paperid, head, mid, tail, tail_prob, test_split_prob, time_diff, gather_index)
 
 
 # loss계산하고 parameter update!
