@@ -67,12 +67,10 @@ class DKTTrainer:
         """ key값으로 batch 형성 """
         new_batches = {k: [] for k in batches[0].keys()}
 
-        max_seq_len = 20
-
         # batch의 값들을 각 column끼리 그룹화
         for k in batches[0].keys():
             for batch in batches:
-                pre_padded = torch.zeros(max_seq_len)
+                pre_padded = torch.zeros(self.args.max_seq_len)
                 pre_padded[-len(batch[k]) :] = batch[k]
                 new_batches[k].append(pre_padded)
 
@@ -82,8 +80,8 @@ class DKTTrainer:
         return new_batches
 
     def _get_loaders(self, train_data, valid_data):
-        trainset = DKTDataset(train_data, self.args, self.args.columns)
-        validset = DKTDataset(valid_data, self.args, self.args.columns)
+        trainset = DKTDataset(train_data, self.args, self.args.columns, is_train=True)
+        validset = DKTDataset(valid_data, self.args, self.args.columns, is_train=False)
 
         train_loader = torch.utils.data.DataLoader(
             trainset,
@@ -162,9 +160,11 @@ class DKTTrainer:
             scheduler.load_state_dict(checkpoint["scheduler"])
             step = checkpoint["step"]
 
+        train_loader, valid_loader = self._get_loaders(self.train_data, self.valid_data)
+
         while True:
-            train_auc, train_acc, train_loss = self._train(model, self.train_loader, optimizer)
-            valid_auc, valid_acc, _, _ = self._validate(model, self.valid_loader)
+            train_auc, train_acc, train_loss = self._train(model, train_loader, optimizer)
+            valid_auc, valid_acc, _, _ = self._validate(model, valid_loader)
 
             tune.report(
                 valid_auc=valid_auc,
@@ -189,8 +189,7 @@ class DKTTrainer:
                 )
 
     def hyper(self, args, tune_args, train_data, valid_data):
-        self.train_loader, self.valid_loader = self._get_loaders(train_data, valid_data)
-
+        self.train_data, self.valid_data = train_data, valid_data
         pbt_scheduler = tune.schedulers.PopulationBasedTraining(time_attr="training_iteration", **tune_args)
 
         stopper = CustomStopper(self.args)
@@ -200,7 +199,7 @@ class DKTTrainer:
             name="pbt_lstm",
             stop=stopper,
             max_failures=3,
-            num_samples=64,
+            num_samples=16,
             metric="",
             scheduler=pbt_scheduler,
             keep_checkpoints_num=2,
@@ -317,6 +316,8 @@ class DKTTrainer:
             for idx, proba in enumerate(total_proba_preds):
                 w.write(f"{idx},{proba}\n")
 
+        return total_proba_preds
+
     def debug(self, train_data, valid_data, test_data):
         """간단한 입,출력을 테스트합니다.
         1. Model Summary
@@ -335,6 +336,7 @@ class DKTTrainer:
         logger.info(summary(model))
 
         logger.info("\nCHECK DATASET")
+        #  self.loss_fn = get_criterion(self.args)
 
         for dataset, name in zip([train_data, valid_data, test_data], ["TRAIN", "VALID", "TEST"]):
             logger.info(f"\n{name} EXAMPLES")
@@ -363,8 +365,9 @@ class DKTTrainer:
 
         gt = batch["answerCode"]
         loss = self._compute_loss(preds, gt)
+        loss.backward()
 
-        logger.info(f"\nLOSS : {loss.item()}")
+        logger.info(f"\nLOSS : {loss}")
 
         auc, acc = self._get_metric(self._to_numpy(gt[:, -1]), self._to_numpy(preds[:, -1]))
         logger.info(f"AUC: {auc} ACC: {acc}")
@@ -379,12 +382,13 @@ class DKTTrainer:
         logger.addHandler(run_file_handler)
 
         model = self._get_model()
-        wandb.init(project="p-stage-4", reinit=True)
+        wandb.init(project="p-stage-4", reinit=True, settings=wandb.Settings(start_method="fork"))
         wandb.config.update(self.args)
         wandb.watch(model)
         wandb.run.name = f"{self.prefix_save_path}_{prefix}"
 
         train_loader, valid_loader = self._get_loaders(train_data, valid_data)
+        #  self.loss_fn = get_criterion(self.args)
 
         self.args.total_steps = int(len(train_loader.dataset) / self.args.batch_size) * (self.args.n_epochs)
         self.args.warmup_steps = self.args.total_steps // 10
@@ -449,6 +453,8 @@ class DKTTrainer:
 
         valid_results = {}
 
+        total_auc, total_acc = 0, 0
+
         for n_fold, seed in enumerate(seeds):
             self.args.seed = seed
             # TODO: User 패턴이 학습이 된다면, 충분히 데이터 유출될 수 있음
@@ -456,7 +462,12 @@ class DKTTrainer:
             prefix = f"cv_{n_fold}"
 
             best_auc, best_acc = self.run(train_data, valid_data, test_data, prefix=prefix)
+            total_auc += best_auc
+            total_acc += best_acc
             valid_results[prefix] = f"best_auc:{best_auc},best_acc:{best_acc}"
+
+        total_auc /= folds
+        total_acc /= folds
 
         self._save_config(valid_results, "valid_cv_results.json")
 
@@ -472,4 +483,6 @@ class DKTTrainer:
                 new_df["prediction"] += df["prediction"]
 
         new_df["prediction"] /= folds
-        new_df.to_csv(p.join(self.prefix_save_path, "cv_ensemble_test_results.csv"))
+        new_df.to_csv(p.join(self.prefix_save_path, "cv_ensemble_test_results.csv"), index=False)
+
+        return total_auc, total_acc

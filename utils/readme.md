@@ -2,11 +2,14 @@
 
 ## Loss
 
-### cross_entropy
+[참고 자료](https://www.kaggle.com/bigironsphere/loss-function-library-keras-pytorch)
 
-### f1_loss
+이진 분류 문제로 풀어야 한다.
 
-### FocalLoss
+- 0 ~ 1 의 확률 값이 preds로 들어가고
+- [0, 1]의 값이 target으로 들어간다.
+
+### DiceBCELoss
 
 ### LabelSmoothingLoss
 

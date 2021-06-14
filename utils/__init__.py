@@ -1,4 +1,5 @@
 import os
+import json
 import random
 
 import torch
@@ -13,6 +14,13 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from utils.scheduler import CosineAnnealingWarmupRestarts
 from utils.criterion import LabelSmoothingLoss, F1Loss, FocalLoss
+
+
+def save_json_file(obj, filedir, filename):
+    filepath = os.path.join(filedir, filename)
+
+    with open(filepath, "w") as writer:
+        writer.write(json.dumps(obj, indent=4, ensure_ascii=False) + "\n")
 
 
 def get_optimizer(model, args):
@@ -82,6 +90,7 @@ def get_args():
     # 설정
     config["seed"] = 42
     config["device"] = "cuda" if torch.cuda.is_available() else "cpu"
+    config["use_dynamic"] = False
 
     # 데이터
     config["max_seq_len"] = 20

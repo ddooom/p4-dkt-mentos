@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 from trainer import DKTTrainer
+from utils import save_json_file
 
 
 class EmbeddingLayer(nn.Module):
@@ -117,16 +118,14 @@ class LSTMTrainer(DKTTrainer):
 
 
 if __name__ == "__main__":
-    from fe.agg import MakeCorrectCount, MakeCorrectPercent, MakeQuestionCount, MakeTopNCorrectPercent
-
-    from fe.seq import SplitAssessmentItemID, MakeFirstClass, MakeSecondClass, ConvertTime
-
+    from fe.feature import FEPipeline
     from dkt_dataset import Preprocess
     from utils import get_args, get_root_dir
-    from fe.feature import FEPipeline
+    from fe.seq import SplitAssessmentItemID, MakeFirstClass, MakeSecondClass, ConvertTime
+    from fe.agg import MakeCorrectCount, MakeCorrectPercent, MakeQuestionCount, MakeTopNCorrectPercent
+
     import ray
     from ray import tune
-    import easydict
 
     ray.init()
 
@@ -158,6 +157,7 @@ if __name__ == "__main__":
         "correctPer",
         "top10CorrectPer",
     ]
+
     pre_encoders = {
         "label": ["testPaper", "firstClass", "secondClass"],
         "min_max": ["top10CorrectPer", "correctPer"],
@@ -183,7 +183,7 @@ if __name__ == "__main__":
     tune_args = {
         "metric": "valid_auc",
         "mode": "max",
-        "perturbation_interval": 5,  # 5 epoch마다 수행
+        "perturbation_interval": 1,  # 5 epoch마다 수행
         "hyperparam_mutations": {
             "hidden_dim": tune.choice([128, 256, 512, 1024, 2048]),
             "n_layers": tune.randint(1, 10),
@@ -191,8 +191,11 @@ if __name__ == "__main__":
             "batch_size": tune.choice([32, 64, 128]),
             "lr": tune.randn(mean=0.0001, sd=0.0005),
         },
-        "quantile_fraction": 0.2,
+        "quantile_fraction": 0.5,
         "resample_probability": 0.1,
     }
-    results = trainer.hyper(args, tune_args, train_dataset, valid_dataset)
-    print(results)
+
+    analysis = trainer.hyper(args, tune_args, train_dataset, valid_dataset)
+
+    save_json_file(analysis.trial_dataframes, args.root_dir, "trial_dataframe.json")
+    save_json_file(analysis.best_config, args.root_dir, "best_config.json")

@@ -1,4 +1,6 @@
-# Team. 멘토스
+# DKT-TUTORIAL
+
+DKT TASK를 유연하게 실험할 수 있는 Repository입니다.
 
 ## Install
 
