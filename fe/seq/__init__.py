@@ -10,8 +10,8 @@ class SeqFeBase(FEBase):
     fe_type = "seq"
 
     @classmethod
-    def transform(cls, df, is_train):
-        save_path = cls.get_save_path(is_train)
+    def transform(cls, df, key):
+        save_path = cls.get_save_path(key)
 
         if p.exists(save_path):
             right_df = cls.load_feature_df(save_path)
@@ -86,3 +86,28 @@ class MakeYMD(SeqFeBase):
         new_df = pd.DataFrame()
         new_df["YMD"] = df["Timestamp"].apply(lambda x: x.split(" ")[0])
         return new_df
+
+
+class MakeTimeDiff(SeqFeBase):
+    name = "make_time_diff"
+    description = {"timeDiff": "사용자가 한 문제를 푸는데 걸린 시간입니다."}
+    pre_fe = {"split_assessmentitem_id", "convert_time"}
+
+    @classmethod
+    def _transform(cls, df):
+        new_df = pd.DataFrame()
+        new_df["timeDiff"] = df.groupby(["userID", "testPaper"]).timeSec.apply(lambda x: x - x.shift(1))
+
+        new_df.fillna(0, inplace=True)
+        new_df["timeDiff"] = new_df["timeDiff"].apply(lambda x: x if x < 300 else 300)  # quantile: 0.95
+        return new_df
+
+
+#  class MakeUserCumTestNum(SeqFeBase):
+#      name = "UserCumtestnum"
+#      description = {""}
+#
+#      @classmethod
+#      def _transform(cls, df):
+#          new_df = pd.DataFrame()
+#          new_df[""]

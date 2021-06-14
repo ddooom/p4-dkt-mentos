@@ -8,10 +8,6 @@ from typing import List
 import pandas as pd
 
 
-logger = logging.getLogger("feature")
-logger.setLevel(logging.INFO)
-
-
 class FEBase:
     name: str = "base_feature"  # Fature Engineering 이름
     fe_type: str = "seq"
@@ -27,14 +23,13 @@ class FEBase:
     }
 
     @classmethod
-    def get_save_path(cls, is_train):
+    def get_save_path(cls, key):
         save_dir = p.join(os.environ["HOME"], "features")
-        prefix = "train" if is_train else "test"
 
         if not p.exists(save_dir):
             os.mkdir(save_dir)
 
-        save_path = p.join(save_dir, f"{prefix}_{cls.name}.pkl")
+        save_path = p.join(save_dir, f"{key}_{cls.name}.pkl")
         return save_path
 
     @classmethod
@@ -61,13 +56,15 @@ class FEPipeline:
     def __init__(self, args: easydict.EasyDict, fes: List[FEBase]):
         self.args = args
         self.fes = fes
-        self.df = None
 
         assert "root_dir" in self.args, "args.root_dir을 설정해주세요."
 
+        self.logger = logging.getLogger("feature")
+        self.logger.setLevel(logging.INFO)
+
         log_file_handler = logging.FileHandler(p.join(self.args.root_dir, "features.log"))
-        logger.addHandler(log_file_handler)
-        logger.addHandler(logging.StreamHandler())
+        self.logger.addHandler(log_file_handler)
+        self.logger.addHandler(logging.StreamHandler())
 
     def description(self):
         print("[Feature Descriptions]")
@@ -91,28 +88,29 @@ class FEPipeline:
 
             pre_fe.add(fe.name)
 
-    def transform(self, df, is_train):
-        logger.info("Feature Engineering Start ... ")
+    def transform(self, df, key):
+        self.logger.info("Feature Engineering Start ... ")
         original_columns = df.columns
-        self.df = df
 
         for fe in self.fes:
-            self.df = fe.transform(self.df, is_train)
-            logger.info(f"\nFeature Engineering Name: {fe.name}")
+            df = fe.transform(df, key)
+            self.logger.info(f"\nFeature Engineering Name: {fe.name}")
 
             for k, v in fe.description.items():
-                logger.info(f"\n{k:<15} : {v}")
-                logger.info(f"dtype: {self.df[k].dtype}")
-                logger.info("[Examples]")
+                self.logger.info(f"\n{k:<15} : {v}")
+                self.logger.info(f"dtype: {df[k].dtype}")
+                self.logger.info("[Examples]")
 
-                for idx in range(0, min(1000, len(self.df)), 100):
-                    logger.info(f"INDEX {idx:<04}: {self.df.iloc[idx][k]}")
+                for idx in range(0, min(1000, len(df)), 100):
+                    self.logger.info(f"INDEX {idx:<04}: {df.iloc[idx][k]}")
 
-        logger.info("Feature Engineering End ... ")
-        logger.info(f"Original DataFrame Keywords: {original_columns}")
-        logger.info(f"Feature Added DataFrame Keywords: {self.df.columns}")
+        self.logger.info("Feature Engineering End ... ")
+        self.logger.info(f"Original DataFrame Keywords: {original_columns}")
+        self.logger.info(f"Feature Added DataFrame Keywords: {df.columns}")
 
-        return self.df
+        df = df.sort_values(["userID", "Timestamp"], axis=0).reset_index(drop=True)
+
+        return df
 
     def get_feature_df(self, df, keys):
         return df[keys]

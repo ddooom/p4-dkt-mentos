@@ -11,9 +11,9 @@ class AggFeBase(FEBase):
     agg_column: list = ["userID"]
 
     @classmethod
-    def transform(cls, df, is_train):
+    def transform(cls, df, key):
         """ 사용자가 푼 문항수를 만듭니다. """
-        save_path = cls.get_save_path(is_train)
+        save_path = cls.get_save_path(key)
 
         if p.exists(save_path):
             right_df = cls.load_feature_df(save_path)
