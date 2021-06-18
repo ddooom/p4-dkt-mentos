@@ -1,6 +1,8 @@
 import os
+import copy
 import time
 import random
+import pickle
 
 import pandas as pd
 import numpy as np
@@ -8,11 +10,12 @@ import numpy as np
 from datetime import datetime
 
 from sklearn.preprocessing import LabelEncoder
+from sklearn import preprocessing
 
 from torch.nn.utils.rnn import pad_sequence
 import torch
 
-# feature 추가 #1~3 수정
+# feature 추가 #1~2 수정
 
 class Preprocess:
     def __init__(self, args):
@@ -67,17 +70,6 @@ class Preprocess:
         def percentile(s):
             return np.sum(s) / len(s)
 
-        prob_groupby = df.groupby('tail').agg({
-            'answerCode': percentile,
-            'tail': 'count'
-        })
-
-        ## tail prob
-        tail_prob_list = prob_groupby['answerCode'].unique().tolist()
-
-        df['tail_prob'] = df['tail'].apply(lambda x: tail_prob_list[int(x)-1])
-    
-
         ## time to sec
         def convert_time(s):
             timestamp = time.mktime(datetime.strptime(s, '%Y-%m-%d %H:%M:%S').timetuple())
@@ -99,6 +91,8 @@ class Preprocess:
         # boundary
         df['boundary'] = [u % t if t != 0 else 0.0 for t, u in zip(df['TestSize'], df['UserTestCumtestnum'])] 
 
+        df = copy.deepcopy(df[df['Retest'] == 0])
+
         ## time diff
         time_diff = df.groupby(['userID', 'head', 'mid'])['Timestamp'].diff()
         df['time_diff'] = time_diff
@@ -107,14 +101,6 @@ class Preprocess:
         # df['time_diff'].fillna(0, inplace=True) -> 성능하락
 
         df['time_diff'] = df['time_diff'].map(lambda x: 600 if x>600 else x)
-
-        ## time median
-        answer_df = df[df['answerCode'] == 1]
-        time_diff_median = answer_df.groupby(['assessmentItemID'])['time_diff'].agg(['median'])
-        df['time_median'] = df['assessmentItemID'].map(time_diff_median['median'])
-
-        ## time distance
-        df['time_dis'] = df['time_diff'] - df['time_median']
 
         # def cate_diff(x):
         #     if x > 600:
@@ -134,21 +120,45 @@ class Preprocess:
         #     if x <= 50:
         #         return "H"
 
-        # df['time_diff'] = df['time_diff'].map(lambda x: cate_diff(x))
+        # load
+        # with open('/opt/ml/code/dkt/max_bins_set.pkl', 'rb') as f:
+        #     ser, bins = pickle.load(f)
 
-        # pd.qcut
+        # df['time_diff'] = df['time_diff'].map(lambda x: cate_diff(x))
         # df['time_diff'] = pd.qcut(df['time_diff'], q=23).cat.rename_categories(list(range(23))).astype(str)
         # df['time_diff'] = pd.qcut(df['time_diff'], q=20).cat.rename_categories(list('abcdefghijklnmopqrst')).astype(str)
         # df['time_diff'] = pd.qcut(df['time_diff'], q=20).astype(str)
 
-        # pd.cut
+        # df['time_diff'] = pd.cut(df['time_diff'], bins=bins, labels=False, include_lowest=True)
         
         thr = 600
         df['time_diff'] = pd.cut(df['time_diff'], bins=thr).astype(str) #.cat.rename_categories(list(range(thr)))
         # df['time_diff'] = pd.cut(df['time_diff'], bins=600).astype(str)
 
+        # head별 정답률
+        answer_head_mean = df.groupby(['userID', 'head'])['answerCode'].mean()
+        answer_head_mean = answer_head_mean.reset_index(level=['userID', 'head'])
+        answer_head_mean.columns = ['userID', 'head', 'head_answerProb']
+
+        df = pd.merge(df, answer_head_mean, on=['userID', 'head'], how='left')
+
+        # mid별 정답률
+        answer_mid_mean = df.groupby(['userID', 'head', 'mid'])['answerCode'].mean()
+        answer_mid_mean = answer_mid_mean.reset_index(level=['userID', 'head', 'mid'])
+        answer_mid_mean.columns = ['userID', 'head', 'mid', 'mid_answerProb']
+
+        df = pd.merge(df, answer_mid_mean, on=['userID', 'head', 'mid'], how='left')
+        
+        # tail별 정답률
+        answer_tail_mean = df.groupby(['head', 'mid', 'tail'])['answerCode'].mean()
+        answer_tail_mean = answer_tail_mean.reset_index(level=['head', 'mid', 'tail'])
+        answer_tail_mean.columns = ['head', 'mid', 'tail', 'tail_answerProb']
+
+        df = pd.merge(df, answer_tail_mean, on=['head', 'mid', 'tail'], how='left')
+
         #2 self.args.features의 순서와 trainer #1의 순서를 맞춰주자!
-        # correct, question, test, tag, time_diff, head, mid, tail, mid_tail, time_dis, mask = batch
+        # correct, question, test, tag, time_diff, head, mid, tail, mid_tail, 
+        # head_answerProb, mid_answerProb, tail_answerProb, mask = batch
 
         self.args.cate_cols.extend([
             'assessmentItemID', 
@@ -158,13 +168,15 @@ class Preprocess:
             'head',
             'mid',
             'tail',
-            'mid_tail'
+            'mid_tail',
             ])
 
         self.args.cont_cols.extend([
             # 'time_diff',
             # 'time_median',
-            'time_dis',
+            'head_answerProb',
+            'mid_answerProb',
+            'tail_answerProb',
             ])
 
         self.args.features.extend(
@@ -176,7 +188,6 @@ class Preprocess:
         return df
 
     def __preprocessing(self, df, is_train = True):
-        # cate_cols = ['assessmentItemID', 'testId', 'KnowledgeTag']
         cate_cols = self.args.cate_cols
 
         if not os.path.exists(self.args.asset_dir):
@@ -200,6 +211,14 @@ class Preprocess:
             test = le.transform(df[col])
             df[col] = test
 
+
+        cont_cols = self.args.cont_cols
+
+        # standard scaler
+        std_scaler = preprocessing.StandardScaler().fit(df[cont_cols] )
+        df[cont_cols] = std_scaler.transform(df[cont_cols])
+        
+
         # df.to_csv('peprocess_test.csv')
 
         return df
@@ -218,22 +237,10 @@ class Preprocess:
             
             if col in self.args.cate_cols:
                 self.args.n_cols[col] = len(np.load(os.path.join(self.args.asset_dir, f'{col}_classes.npy')))
-        
+
         df = df.sort_values(by=['userID','Timestamp'], axis=0)
 
-        #3 시퀀스에 사용할 feature 등록
-        feature_columns = self.args.features
-        # [
-        #     'answerCode',
-        #     'assessmentItemID',
-        #     'testId',
-        #     'KnowledgeTag',
-        #     'time_diff',
-        #     'head',
-        #     'mid',
-        #     'tail',
-        #     'mid_tail',
-        # ]
+        feature_columns = self.args.features        
         
         def get_values(cols, r):
             result = []
@@ -242,20 +249,37 @@ class Preprocess:
 
             return result
 
-
         if is_train:
             group = df.groupby(['userID', 'head', 'mid']).apply(
                 lambda r: (get_values(feature_columns, r)))
+            
         else:
             group = df.groupby('userID').apply(
                 lambda r: (get_values(feature_columns, r)))
 
-        # group = df.groupby('userID').apply(
-        #         lambda r: (get_values(feature_columns, r)))
+        if is_train:
+            # save
+            mass = (self.args.cate_cols, self.args.cont_cols, self.args.features)
+            with open('/opt/ml/code/dkt/pkl/mass.pkl', 'wb') as f:
+                pickle.dump(mass, f, pickle.HIGHEST_PROTOCOL)
+
+            save_name = f'{self.args.pkl_dir}/{self.args.pkl_name}'
+            with open(save_name, 'wb') as f:
+                pickle.dump((group.values, self.args.n_cols), f, pickle.HIGHEST_PROTOCOL)
+
         return group.values
 
     def load_train_data(self, file_name):
-        self.train_data = self.load_data_from_file(file_name)
+        if self.args.pkl:
+            # load
+            pkl_name = f'{self.args.pkl_dir}/{self.args.pkl_name}'
+            with open(pkl_name, 'rb') as f:
+                self.train_data, self.args.n_cols = pickle.load(f)
+            
+            with open('/opt/ml/code/dkt/pkl/mass.pkl', 'rb') as f:
+                self.args.cate_cols, self.args.cont_cols, self.args.features = pickle.load(f)
+        else:
+            self.train_data = self.load_data_from_file(file_name)
 
     def load_test_data(self, file_name):
         self.test_data = self.load_data_from_file(file_name, is_train= False)

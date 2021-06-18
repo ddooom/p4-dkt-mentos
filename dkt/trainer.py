@@ -1,7 +1,12 @@
 import os
+import copy
+
 import torch
 import numpy as np
 
+from tqdm import tqdm
+from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedKFold
 
 from .dataloader import get_loaders
 from .optimizer import get_optimizer
@@ -58,7 +63,7 @@ def run(args, train_data, valid_data):
                 'epoch': epoch + 1,
                 'state_dict': model_to_save.state_dict(),
                 },
-                args.model_dir, f'{args.model}_{args.info}.pt',
+                args.model_dir, f'{args.model}_{args.info}_{args.kfold}.pt',
             )
             early_stopping_counter = 0
         else:
@@ -157,7 +162,6 @@ def validate(valid_loader, model, args):
 
 
 def inference(args, test_data):
-    
     model = load_model(args)
     model.eval()
     _, test_loader = get_loaders(args, None, test_data)
@@ -192,6 +196,47 @@ def inference(args, test_data):
             w.write('{},{}\n'.format(id,p))
 
 
+def multi_inference(args, test_data):
+    model_list = os.listdir(args.model_dir)
+    print(model_list)
+
+    kfold_preds = np.zeros(744)
+    for model in model_list:
+        args.model_name = model
+        model = load_model(args)
+        model.eval()
+        _, test_loader = get_loaders(args, None, test_data)
+        
+        total_preds = []
+        for step, batch in enumerate(test_loader):
+            inputs = process_batch(batch, args)
+
+            preds = model(inputs)
+            
+            # predictions
+            preds = preds[:,-1]
+            
+            if args.device == 'cuda':
+                preds = preds.to('cpu').detach().numpy()
+            else: # cpu
+                preds = preds.detach().numpy()
+                
+            total_preds+=list(preds)
+        kfold_preds += total_preds  
+        
+    kfold_preds /= len(model_list)
+
+    write_path = os.path.join(args.output_dir, f"{args.model_name[:-5]}.csv")
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)    
+        
+    with open(write_path, 'w', encoding='utf8') as w:
+        print("writing prediction : {}".format(write_path))
+        w.write("id,prediction\n")
+        for id, p in enumerate(kfold_preds):
+            w.write('{},{}\n'.format(id,p))
+
+
 def get_model(args):
     """
     Load model and move tensors to a given devices.
@@ -211,7 +256,10 @@ def get_model(args):
 def process_batch(batch, args):
 
     #1 dataloader #2와 순서를 맞춰주자
-    correct, question, test, tag, time_diff, head, mid, tail, mid_tail, time_dis, mask = batch
+    (correct, question, test, tag, time_diff, 
+    head, mid, tail, mid_tail, 
+    head_answerProb, mid_answerProb, tail_answerProb,
+    mask) = batch
     
     
     # change to float
@@ -234,7 +282,10 @@ def process_batch(batch, args):
 
     #2 추가 feature
     # time_median = ((time_median + 1) * mask).type(torch.FloatTensor)
-    time_dis = ((time_dis + 1) * mask).type(torch.FloatTensor)
+    head_answerProb = ((head_answerProb + 1) * mask).type(torch.FloatTensor)
+    mid_answerProb = ((mid_answerProb + 1) * mask).type(torch.FloatTensor)
+    tail_answerProb = ((tail_answerProb + 1) * mask).type(torch.FloatTensor)
+
 
     time_diff = ((time_diff + 1) * mask).to(torch.int64)
     head = ((head + 1) * mask).to(torch.int64)
@@ -262,7 +313,9 @@ def process_batch(batch, args):
     tail = tail.to(args.device)
     mid_tail = mid_tail.to(args.device)
 
-    time_dis = time_dis.to(args.device)
+    head_answerProb = head_answerProb.to(args.device)
+    mid_answerProb = mid_answerProb.to(args.device)
+    tail_answerProb = tail_answerProb.to(args.device)
 
     mask = mask.to(args.device)
 
@@ -270,7 +323,8 @@ def process_batch(batch, args):
     gather_index = gather_index.to(args.device)
 
     #4 
-    return (test, question, tag, time_diff, head, mid, tail, mid_tail, time_dis,
+    return (test, question, tag, time_diff, head, mid, tail, mid_tail, 
+            head_answerProb, mid_answerProb, tail_answerProb,
             mask, interaction, gather_index, correct)
 
 
@@ -314,3 +368,202 @@ def load_model(args):
    
     print("Loading Model from:", model_path, "...Finished.")
     return model
+
+
+class Trainer:
+    def __init__(self):
+        pass
+
+    def train(self, args, train_data, valid_data):
+        """훈련을 마친 모델을 반환한다"""
+
+        # args update
+        self.args = args
+
+        train_loader, valid_loader = get_loaders(args, train_data, valid_data)
+        
+        # only when using warmup scheduler
+        args.total_steps = int(len(train_loader.dataset) / args.batch_size) * (args.n_epochs)
+        args.warmup_steps = args.total_steps // 10
+            
+        model = get_model(args)
+        optimizer = get_optimizer(model, args)
+        scheduler = get_scheduler(optimizer, args)
+
+        best_auc = -1
+        best_model = -1
+        early_stopping_counter = 0
+        for epoch in tqdm(range(args.n_epochs)):
+
+            ### TRAIN
+            train_auc, train_acc, loss_avg = train(train_loader, model, optimizer, args)
+            
+            ### VALID
+            auc, acc, preds, targets = validate(valid_loader, model, args)
+
+            ### model save or early stopping
+            if auc > best_auc:
+                best_auc = auc
+                best_model = copy.deepcopy(model)
+                early_stopping_counter = 0
+            else:
+                early_stopping_counter += 1
+                if early_stopping_counter >= args.patience:
+                    print(f'EarlyStopping counter: {early_stopping_counter} out of {args.patience}')
+                    break
+
+            # scheduler
+            if args.scheduler == 'plateau':
+                scheduler.step(best_auc)
+            else:
+                scheduler.step()
+
+        return best_model
+
+    def evaluate(self, args, model, valid_data):
+        """훈련된 모델과 validation 데이터셋을 제공하면 predict 반환"""
+        pin_memory = False
+
+        valset = DKTDataset(valid_data, args)
+        valid_loader = torch.utils.data.DataLoader(valset, shuffle=False,
+                                                   batch_size=args.batch_size,
+                                                   pin_memory=pin_memory,
+                                                   collate_fn=collate)
+
+        auc, acc, preds, _ = validate(valid_loader, model, args)
+        print(f"AUC : {auc}, ACC : {acc}")
+
+        return preds
+
+    def test(self, args, model, test_data):
+        model.eval()
+        _, test_loader = get_loaders(args, None, test_data)
+
+        total_preds = []
+        for step, batch in enumerate(test_loader):
+            input = process_batch(batch, args)
+
+            preds = model(input)
+
+            # predictions
+            preds = preds[:,-1]
+
+            if args.device == 'cuda':
+                preds = preds.to('cpu').detach().numpy()
+            else: # cpu
+                preds = preds.detach().numpy()
+                
+            total_preds.append(preds)
+
+        total_preds = np.concatenate(total_preds)
+            
+        return total_preds
+
+    def get_target(self, datas):
+        targets = []
+        for data in datas:
+            targets.append(data[0][-1])
+
+        return np.array(targets)
+
+
+class Stacking:
+    def __init__(self, trainer):
+        self.trainer = trainer
+
+
+    def get_train_oof(self, args, data, fold_n=5, stratify=True):
+
+        oof = np.zeros(data.shape[0])
+
+        fold_models = []
+
+        if stratify:
+            kfold = StratifiedKFold(n_splits=fold_n)
+        else:
+            kfold = KFold(n_splits=fold_n)
+
+        # 클래스 비율 고려하여 Fold별로 데이터 나눔
+        target = self.trainer.get_target(data)
+        for i, (train_index, valid_index) in enumerate(kfold.split(data, target)):
+            train_data, valid_data = data[train_index], data[valid_index]
+
+            # 모델 생성 및 훈련
+            print(f'Calculating train oof {i + 1}')
+            trained_model = self.trainer.train(args, train_data, valid_data)
+
+            # 모델 검증
+            predict = self.trainer.evaluate(args, trained_model, valid_data)
+            
+            # fold별 oof 값 모으기
+            oof[valid_index] = predict
+            fold_models.append(trained_model)
+
+        return oof, fold_models
+
+    def get_test_avg(self, args, models, test_data):
+        predicts = np.zeros(test_data.shape[0])
+
+        # 클래스 비율 고려하여 Fold별로 데이터 나눔
+        for i, model in enumerate(models):
+            print(f'Calculating test avg {i + 1}')
+            predict = self.trainer.test(args, model, test_data)
+              
+            # fold별 prediction 값 모으기
+            predicts += predict
+
+        # prediction들의 average 계산
+        predict_avg = predicts / len(models)
+
+        return predict_avg
+
+
+    def train_oof_stacking(self, args_list, data, fold_n=5, stratify=True):
+    
+        S_train = None
+        models_list = []
+        for i, args in enumerate(args_list):
+            print(f'training oof stacking model [ {i + 1} ]')
+            train_oof, models = self.get_train_oof(args, data, fold_n=fold_n, stratify=stratify)
+            train_oof = train_oof.reshape(-1, 1)
+
+            # oof stack!
+            if not isinstance(S_train, np.ndarray):
+                S_train = train_oof
+            else:
+                S_train = np.concatenate([S_train, train_oof], axis=1)
+
+            # store fold models
+            models_list.append(models)
+
+        return models_list, S_train
+
+    def test_avg_stacking(self, args, models_list, test_data):
+    
+        S_test = None
+        for i, models in enumerate(models_list):
+            print(f'test average stacking model [ {i + 1} ]')
+            test_avg = self.get_test_avg(args, models, test_data)
+            test_avg = test_avg.reshape(-1, 1)
+
+            # avg stack!
+            if not isinstance(S_test, np.ndarray):
+                S_test = test_avg
+            else:
+                S_test = np.concatenate([S_test, test_avg], axis=1)
+
+        return S_test
+
+
+    def train(self, meta_model, args_list, data):
+        models_list, S_train = self.train_oof_stacking(args_list, data)
+        target = self.trainer.get_target(data)
+        meta_model.fit(S_train, target)
+        
+        return meta_model, models_list, S_train, target
+
+    def test(self, meta_model, models_list, test_data):
+        S_test = self.test_avg_stacking(args, models_list, test_data)
+        predict = meta_model.predict(S_test)
+
+        return predict, S_test
