@@ -1,3 +1,20 @@
-# Team. 멘토스
+# Team. 멘토스 
+## LGBM
+- `LGBMwithAggData` : Training LGBM with aggregation data
+- `LGBMwithRowData` : Training LGBM with row(sequential) data
 
-![멘토스](http://img.danawa.com/prod_img/500000/367/313/img/1313367_1.jpg?shrink=360:360&_v=20200921104637)
+## install
+
+```
+pip install -r requirements.txt
+```
+
+## How to use
+- README.md in directory 
+    
+
+## LB score
+- `LGBMwithAggData` best LB auc : 0.7313
+- `LGBMwithRowData` best LB auc : 0.7893
+
+

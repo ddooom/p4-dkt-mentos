@@ -1,5 +1,5 @@
-# LGBM 
-### Input Variables
+# LGBM with aggregation data
+### Input arguments
 - id_column : aggregation 데이터 셋을 구축할 때, 기준이 되는 column이다. ['userID', 'userID_testIdHead', 'userId_YMD_testId'] 중 하나 선택 가능하며 userID_testIdHead는 유저 별 대분류를, userId_YMD_testId는 유저 별 cycle을 나타낸다.
 - n_folds : k-fold를 할 때, fold의 수
 

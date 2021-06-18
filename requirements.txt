@@ -1,7 +1,6 @@
-torch
+easydict
+numpy
 pandas
 sklearn
-tqdm
-wandb
-transformers
-easydict
+lightgbm
+pycaret
