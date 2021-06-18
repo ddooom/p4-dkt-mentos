@@ -50,29 +50,16 @@ class LSTM(nn.Module):
     def __init__(self, args):
         super(LSTM, self).__init__()
         self.args = args
-        self.device = args.device
-
-        self.hidden_dim = self.args.hidden_dim
-        self.n_layers = self.args.n_layers
-
-        self.emb_layer = EmbeddingLayer(args, self.hidden_dim // 2)
-        self.nli_layer = LinearLayer(args, self.hidden_dim // 2)
-
-        self.comb_proj = nn.Linear(self.hidden_dim, self.hidden_dim)
-
-        self.lstm = nn.LSTM(self.hidden_dim, self.hidden_dim, self.n_layers, batch_first=True)
-
-        # Fully connected layer
+        self.emb_layer = EmbeddingLayer(args, self.args.hidden_dim // 2)
+        self.nli_layer = LinearLayer(args, self.args.hidden_dim // 2)
+        self.comb_proj = nn.Linear(self.args.hidden_dim, self.args.hidden_dim)
+        self.lstm = nn.LSTM(self.args.hidden_dim, self.args.hidden_dim, self.args.n_layers, batch_first=True)
         self.fc = nn.Linear(self.hidden_dim, 1)
         self.activation = nn.Sigmoid()
 
     def init_hidden(self, batch_size):
-        h = torch.zeros(self.n_layers, batch_size, self.hidden_dim)
-        h = h.to(self.device)
-
-        c = torch.zeros(self.n_layers, batch_size, self.hidden_dim)
-        c = c.to(self.device)
-
+        h = torch.zeros(self.args.n_layers, batch_size, self.hidden_dim).to(self.args.device)
+        c = torch.zeros(self.args.n_layers, batch_size, self.hidden_dim).to(self.args.device)
         return (h, c)
 
     def forward(self, batch):
@@ -86,8 +73,7 @@ class LSTM(nn.Module):
 
         hidden = self.init_hidden(batch_size)
         out, hidden = self.lstm(X, hidden)
-        out = out.contiguous().view(batch_size, -1, self.hidden_dim)
-
+        out = out.contiguous().view(batch_size, -1, self.args.hidden_dim)
         out = self.fc(out)
         preds = self.activation(out).view(batch_size, -1)
 
