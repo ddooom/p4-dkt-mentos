@@ -18,6 +18,8 @@ Jupyter Notebook 환경에서 자유롭게 실험하는 것을 권장합니다.
 
 module path : `./fe/...`
 
+#### 기능
+
 ```text
 FEBase.save_feature_df()  # Cache에 Feature를 저장합니다.
 FEBase.load_feature_df()  # 저장된 Feature를 불러옵니다.
@@ -31,7 +33,7 @@ FEPipeline.debug()        # Feature의 선행 순서를 파악하여 작동 유�
 FEPipeline.transform()    # Feature들을 생성합니다. 
 ```
 
-**사용 방법**
+#### 사용 방법
 
 ```python
 from fe.feature import FEPipeline
@@ -60,13 +62,16 @@ fe_pipeline = FEPipeline(
 
 module path : `./dkt_dataset.py`
 
+#### 기능
+
 ```text
 Preprocess.feature_engineering()  # Train, Test 데이터 셋의 Feature Engineering을 진행합니다.
 Preprocess.split_data()           # Train 데이터셋에서 Validation 데이터셋을 만듭니다.
 Preprocess.scaling()              # 각 Feature들을 Scaling합니다. (LabelEncoder, MinMaxScaler, StandardScaler)
 Preprocess.data_augmentation()    # 학습 데이터를 GroupBy 메서드 및 테스트 데이터를 사용하여 증강합니다.
 ```
-**사용 방법**
+
+#### 사용 방법
 
 ```python
 columns = ["userID", "answerCode", "testPaper", "timeSec", "firstClass", 
@@ -88,6 +93,8 @@ preprocess = NewSplitPreprocess(args, fe_pipeline, columns)
 ### Trainer
 
 module path : `./trainer.py`
+
+#### 기능
 
 ```text
 Trainer._helper_init()    # 로깅 디렉토리 생성
@@ -211,7 +218,7 @@ class LSTMTrainer(DKTTrainer):
         return batch
 ```
 
-**사용 방법**
+#### 사용 방법
 
 ```python
 trainer = Loss1Trainer(args, LSTM)   # LSTM Model with Loss1Trainer
