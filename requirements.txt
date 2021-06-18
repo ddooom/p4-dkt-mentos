@@ -5,3 +5,7 @@ tqdm
 wandb
 transformers
 easydict
+adamp
+madgrad
+'ray[tune]'
+'ray[default]'
