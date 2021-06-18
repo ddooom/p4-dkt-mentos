@@ -6,7 +6,11 @@ def parse_args(mode='train'):
     parser = argparse.ArgumentParser()
 
     
+<<<<<<< HEAD:seongjin/args.py
     parser.add_argument('--seed', default=42, type=int, help='seed')
+=======
+    parser.add_argument('--seed', default=5, type=int, help='seed')
+>>>>>>> 85767c1a39e29bb7e64e75c905d2e2cf67d3da99:args.py
     
     parser.add_argument('--device', default='cpu', type=str, help='cpu or gpu')
 
@@ -20,22 +24,23 @@ def parse_args(mode='train'):
 
     parser.add_argument('--output_dir', default='output/', type=str, help='output directory')
     parser.add_argument('--test_file_name', default='test_data.csv', type=str, help='test file name')
+    parser.add_argument('--output_name', default='output.csv', type=str)
     
     parser.add_argument('--max_seq_len', default=20, type=int, help='max sequence length')
-    parser.add_argument('--num_workers', default=1, type=int, help='number of workers')
+    parser.add_argument('--num_workers', default=0, type=int, help='number of workers')
 
     # 모델
-    parser.add_argument('--hidden_dim', default=64, type=int, help='hidden dimension size')
-    parser.add_argument('--n_layers', default=2, type=int, help='number of layers')
-    parser.add_argument('--n_heads', default=2, type=int, help='number of heads')
+    parser.add_argument('--hidden_dim', default=256, type=int, help='hidden dimension size')
+    parser.add_argument('--n_layers', default=6, type=int, help='number of layers')
+    parser.add_argument('--n_heads', default=4, type=int, help='number of heads')
     parser.add_argument('--drop_out', default=0.2, type=float, help='drop out rate')
     
     # 훈련
-    parser.add_argument('--n_epochs', default=20, type=int, help='number of epochs')
+    parser.add_argument('--n_epochs', default=80, type=int, help='number of epochs')
     parser.add_argument('--batch_size', default=64, type=int, help='batch size')
-    parser.add_argument('--lr', default=0.0001, type=float, help='learning rate')
+    parser.add_argument('--lr', default=1e-4, type=float, help='learning rate')
     parser.add_argument('--clip_grad', default=10, type=int, help='clip grad')
-    parser.add_argument('--patience', default=5, type=int, help='for early stopping')
+    parser.add_argument('--patience', default=20, type=int, help='for early stopping')
     
 
     parser.add_argument('--log_steps', default=50, type=int, help='print log per n steps')
@@ -46,7 +51,22 @@ def parse_args(mode='train'):
     parser.add_argument('--optimizer', default='adam', type=str, help='optimizer type')
     parser.add_argument('--scheduler', default='plateau', type=str, help='scheduler type')
 
+<<<<<<< HEAD:seongjin/args.py
     parser.add_argument('--info', default='test', type=str, help='file info')
+=======
+    # custom
+    parser.add_argument('--wandb_name', default=None, type=str, help='wandb name')
+    parser.add_argument('--emb_size', default=100, type=int)
+    parser.add_argument("--scheduler_step", type=int, default=5)
+    parser.add_argument('--max_lr', type=float, default=1e-4)
+    parser.add_argument('--min_lr', type=float, default=1e-5)
+    parser.add_argument('--data_id', type=str, default='userID')
+    parser.add_argument('--split_id', type=str, default='test_id')
+
+    feature_parser = parser.add_mutually_exclusive_group(required=False)  # argument가 꼭 필요한지 아닌지, False면 실행할 때 아래 arugment를 꼭 안써줘도 된다
+    feature_parser.add_argument('--numeric', dest='numeric', action='store_true')
+    parser.set_defaults(numeric=False)
+>>>>>>> 85767c1a39e29bb7e64e75c905d2e2cf67d3da99:args.py
     
     args = parser.parse_args()
 

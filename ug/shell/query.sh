@@ -1,0 +1,1 @@
+python train.py --model query --data_id userID --wandb_name query_seqlen_20 --n_epochs 50 --scheduler plateau --lr 1e-4 --max_seq_len 20
