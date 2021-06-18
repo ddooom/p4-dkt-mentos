@@ -10,11 +10,11 @@ pip install -r requirements.txt
 ```
 
 ## How to use
-- README.md in directory 
+- `README.md` in directory 
     
 
 ## LB score
-- `LGBMwithAggData` best LB auc : 0.7313
-- `LGBMwithRowData` best LB auc : 0.7893
+- `LGBMwithAggData` Best LB auc : **0.7313**
+- `LGBMwithRowData` Best LB auc : **0.7893**
 
 
