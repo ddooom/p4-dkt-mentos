@@ -1,0 +1,6 @@
+easydict
+numpy
+pandas
+sklearn
+lightgbm
+pycaret
