@@ -19,6 +19,3 @@ pip install -r requirements.txt
 ## LB score
 - `LGBMwithAggData` Best LB auc : **0.7313**
 - `LGBMwithRowData` Best LB auc : **0.7893**
-
-<br>
-
